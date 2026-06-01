@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Poppins', sans-serif;
+  background-color: #faf8fd;
+  color: #3d3d3d;
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-purple-dark text-white px-4 py-2 rounded-lg font-semibold text-sm hover:bg-purple-darkest transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-secondary {
+    @apply bg-white text-purple-dark border border-purple-dark px-4 py-2 rounded-lg font-semibold text-sm hover:bg-bg-light transition-colors;
+  }
+  .btn-ghost {
+    @apply text-text-muted px-3 py-1.5 rounded-lg text-sm hover:bg-bg-light transition-colors;
+  }
+  .card {
+    @apply bg-white border border-border rounded-xl shadow-sm;
+  }
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold;
+  }
+  .badge-billable {
+    @apply badge bg-olive/10 text-olive;
+  }
+  .badge-non-billable {
+    @apply badge bg-gray-100 text-text-muted;
+  }
+  .badge-fixed {
+    @apply badge bg-purple-mid/10 text-purple-mid;
+  }
+  .badge-tm {
+    @apply badge bg-purple-slate/10 text-purple-slate;
+  }
+  .badge-non-billable-project {
+    @apply badge bg-gray-100 text-text-muted;
+  }
+  .form-label {
+    @apply block text-sm font-semibold text-text-body mb-1;
+  }
+  .form-input {
+    @apply w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-mid focus:border-transparent;
+  }
+  .form-select {
+    @apply w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-mid focus:border-transparent bg-white;
+  }
+  .page-title {
+    @apply text-2xl font-bold text-purple-darkest;
+  }
+  .section-title {
+    @apply text-lg font-semibold text-purple-darkest;
+  }
+}

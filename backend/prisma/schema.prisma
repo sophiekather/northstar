@@ -1,0 +1,180 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String         @id @default(cuid())
+  name                String
+  email               String         @unique
+  passwordHash        String
+  weeklyHourTarget    Float          @default(35)
+  notificationsEnabled Boolean       @default(true)
+  createdAt           DateTime       @default(now())
+  timeEntries         TimeEntry[]
+  expenses            Expense[]
+  mileageEntries      MileageEntry[]
+}
+
+model Client {
+  id           String         @id @default(cuid())
+  name         String
+  emails       String[]
+  keywords     String[]
+  notes        String?
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  projects     Project[]
+  expenses     Expense[]
+  mileage      MileageEntry[]
+}
+
+model Project {
+  id              String                 @id @default(cuid())
+  clientId        String
+  client          Client                 @relation(fields: [clientId], references: [id])
+  name            String
+  type            ProjectType
+  budgetHours     Float?
+  budgetDollars   Float?
+  startDate       DateTime?
+  endDate         DateTime?
+  isActive        Boolean                @default(true)
+  notes           String?
+  createdAt       DateTime               @default(now())
+  timeEntries     TimeEntry[]
+  projectTasks    ProjectTask[]
+  retainerConfig  RetainerConfig?
+  expenseConfigs  ProjectExpenseConfig[]
+}
+
+model TaskType {
+  id                  String        @id @default(cuid())
+  name                String        @unique
+  defaultHourlyRate   Float         @default(0)
+  isBillableDefault   Boolean       @default(true)
+  isArchived          Boolean       @default(false)
+  createdAt           DateTime      @default(now())
+  projectTasks        ProjectTask[]
+  timeEntries         TimeEntry[]
+}
+
+model ProjectTask {
+  id           String    @id @default(cuid())
+  projectId    String
+  project      Project   @relation(fields: [projectId], references: [id])
+  taskTypeId   String
+  taskType     TaskType  @relation(fields: [taskTypeId], references: [id])
+  isActive     Boolean   @default(true)
+
+  @@unique([projectId, taskTypeId])
+}
+
+model TimeEntry {
+  id                  String       @id @default(cuid())
+  userId              String
+  user                User         @relation(fields: [userId], references: [id])
+  projectId           String
+  project             Project      @relation(fields: [projectId], references: [id])
+  taskTypeId          String
+  taskType            TaskType     @relation(fields: [taskTypeId], references: [id])
+  date                DateTime
+  hours               Float
+  hourlyRate          Float
+  isBillable          Boolean      @default(true)
+  note                String?
+  noteClientVisible   Boolean      @default(false)
+  source              EntrySource  @default(MANUAL)
+  calendarEventId     String?
+  status              EntryStatus  @default(CONFIRMED)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+}
+
+model Expense {
+  id            String           @id @default(cuid())
+  userId        String
+  user          User             @relation(fields: [userId], references: [id])
+  clientId      String?
+  client        Client?          @relation(fields: [clientId], references: [id])
+  categoryId    String
+  category      ExpenseCategory  @relation(fields: [categoryId], references: [id])
+  date          DateTime
+  amount        Float
+  description   String
+  receiptUrl    String?
+  isBillable    Boolean          @default(false)
+  expenseType   ExpenseType
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+}
+
+model MileageEntry {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id])
+  clientId          String?
+  client            Client?   @relation(fields: [clientId], references: [id])
+  date              DateTime
+  miles             Float
+  purpose           String
+  ratePerMile       Float     @default(0.70)
+  calculatedAmount  Float
+  isBillable        Boolean   @default(false)
+  createdAt         DateTime  @default(now())
+}
+
+model ExpenseCategory {
+  id              String                 @id @default(cuid())
+  name            String                 @unique
+  isOverheadOnly  Boolean                @default(false)
+  isArchived      Boolean                @default(false)
+  expenses        Expense[]
+  projectConfigs  ProjectExpenseConfig[]
+}
+
+model RetainerConfig {
+  id               String   @id @default(cuid())
+  projectId        String   @unique
+  project          Project  @relation(fields: [projectId], references: [id])
+  monthlyHours     Float
+  rolloverEnabled  Boolean  @default(false)
+  rolloverCapHours Float?
+}
+
+model ProjectExpenseConfig {
+  id                  String           @id @default(cuid())
+  projectId           String
+  project             Project          @relation(fields: [projectId], references: [id])
+  categoryId          String
+  category            ExpenseCategory  @relation(fields: [categoryId], references: [id])
+  isBillableDefault   Boolean          @default(false)
+
+  @@unique([projectId, categoryId])
+}
+
+enum ProjectType {
+  FIXED_FEE
+  TIME_MATERIALS
+  NON_BILLABLE
+}
+
+enum EntrySource {
+  MANUAL
+  CALENDAR_DRAFT
+  CALENDAR_CONFIRMED
+}
+
+enum EntryStatus {
+  DRAFT
+  CONFIRMED
+}
+
+enum ExpenseType {
+  CLIENT
+  OVERHEAD
+}
