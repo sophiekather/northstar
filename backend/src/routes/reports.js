@@ -7,14 +7,16 @@ const prisma = new PrismaClient();
 
 router.use(requireAuth);
 
+function parseDate(dateStr) {
+  if (!dateStr) return undefined;
+  if (dateStr.includes('T')) return new Date(dateStr);
+  return new Date(`${dateStr}T12:00:00Z`);
+}
+
 function dateRange(start, end) {
   const where = {};
-  if (start) where.gte = new Date(start);
-  if (end) {
-    const e = new Date(end);
-    e.setHours(23, 59, 59, 999);
-    where.lte = e;
-  }
+  if (start) where.gte = new Date(`${start}T00:00:00Z`);
+  if (end) where.lte = new Date(`${end}T23:59:59Z`);
   return Object.keys(where).length ? where : undefined;
 }
 

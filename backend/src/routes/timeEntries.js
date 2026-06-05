@@ -7,6 +7,14 @@ const prisma = new PrismaClient();
 
 router.use(requireAuth);
 
+// Parse a YYYY-MM-DD date string as noon UTC to avoid timezone-shift bugs
+function parseDate(dateStr) {
+  if (!dateStr) return undefined;
+  // If already a full ISO string, use as-is; otherwise anchor to noon UTC
+  if (dateStr.includes('T')) return new Date(dateStr);
+  return new Date(`${dateStr}T12:00:00Z`);
+}
+
 router.get('/', async (req, res) => {
   const { startDate, endDate, userId, everyone } = req.query;
 
@@ -44,7 +52,7 @@ router.post('/', async (req, res) => {
       userId: req.userId,
       projectId,
       taskTypeId,
-      date: new Date(date),
+      date: parseDate(date),
       hours,
       hourlyRate: hourlyRate || 0,
       isBillable: isBillable ?? true,
@@ -73,7 +81,7 @@ router.put('/:id', async (req, res) => {
     data: {
       projectId,
       taskTypeId,
-      date: date ? new Date(date) : undefined,
+      date: date ? parseDate(date) : undefined,
       hours,
       hourlyRate,
       isBillable,
