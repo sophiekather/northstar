@@ -7,7 +7,7 @@ const navLinks = [
   { to: '/expenses', label: 'Expenses' },
   { to: '/projects', label: 'Projects' },
   { to: '/team', label: 'Team', comingSoon: true },
-  { to: '/reports', label: 'Reports', comingSoon: true },
+  { to: '/reports', label: 'Reports' },
   { to: '/settings', label: 'Settings' },
 ];
 

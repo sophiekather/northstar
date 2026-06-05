@@ -9,6 +9,7 @@ import ProjectDetailPage from './pages/ProjectDetailPage';
 import SettingsPage from './pages/SettingsPage';
 import ClientsSettingsPage from './pages/ClientsSettingsPage';
 import TaskTypesSettingsPage from './pages/TaskTypesSettingsPage';
+import ReportsPage from './pages/ReportsPage';
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
@@ -28,6 +29,7 @@ function AppRoutes() {
         <Route path="expenses" element={<ExpensesPage />} />
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/:id" element={<ProjectDetailPage />} />
+        <Route path="reports" element={<ReportsPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="settings/clients" element={<ClientsSettingsPage />} />
         <Route path="settings/tasks" element={<TaskTypesSettingsPage />} />
