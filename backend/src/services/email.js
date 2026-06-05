@@ -1,7 +1,11 @@
 const { Resend } = require('resend');
 
-const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM = 'reminders@civicnorthconsulting.com';
+
+function getResend() {
+  if (!process.env.RESEND_API_KEY) throw new Error('RESEND_API_KEY is not set');
+  return new Resend(process.env.RESEND_API_KEY);
+}
 
 /**
  * Daily reminder — sent at 3pm PT on weekdays if no time logged today
@@ -9,7 +13,7 @@ const FROM = 'reminders@civicnorthconsulting.com';
 async function sendDailyReminder(user) {
   const firstName = user.name.split(' ')[0];
 
-  await resend.emails.send({
+  await getResend().emails.send({
     from: FROM,
     to: user.email,
     subject: `⏱ Don't forget to log your time today`,
@@ -54,7 +58,7 @@ async function sendWeeklySummary(user, { hoursLogged, hourTarget, topProjects })
     </tr>`
   ).join('');
 
-  await resend.emails.send({
+  await getResend().emails.send({
     from: FROM,
     to: user.email,
     subject: `📋 Your week in review — ${hoursLogged.toFixed(1)} of ${hourTarget} hrs logged`,
