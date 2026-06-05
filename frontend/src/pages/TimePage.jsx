@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, parseISO, isSameDay } from 'date-fns';
 import api from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
+import TimesheetView from '../components/TimesheetView';
 
 function pad(n) { return String(n).padStart(2, '0'); }
 
@@ -22,6 +23,7 @@ export default function TimePage() {
   const { user } = useAuth();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [everyone, setEveryone] = useState(false);
+  const [view, setView] = useState('list'); // 'list' | 'timesheet'
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -254,19 +256,33 @@ export default function TimePage() {
             Today
           </button>
         </div>
-        <div className="flex items-center gap-1 bg-bg-light rounded-lg p-1">
-          <button
-            onClick={() => setEveryone(false)}
-            className={`px-3 py-1 text-sm rounded-md transition-colors ${!everyone ? 'bg-white shadow-sm font-semibold text-purple-dark' : 'text-text-muted'}`}
-          >
-            My Time
-          </button>
-          <button
-            onClick={() => setEveryone(true)}
-            className={`px-3 py-1 text-sm rounded-md transition-colors ${everyone ? 'bg-white shadow-sm font-semibold text-purple-dark' : 'text-text-muted'}`}
-          >
-            Everyone
-          </button>
+        <div className="flex items-center gap-2">
+          {/* View toggle */}
+          <div className="flex items-center gap-1 bg-bg-light rounded-lg p-1">
+            <button onClick={() => setView('list')}
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${view === 'list' ? 'bg-white shadow-sm font-semibold text-purple-dark' : 'text-text-muted'}`}>
+              List
+            </button>
+            <button onClick={() => setView('timesheet')}
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${view === 'timesheet' ? 'bg-white shadow-sm font-semibold text-purple-dark' : 'text-text-muted'}`}>
+              Timesheet
+            </button>
+          </div>
+          {/* My Time / Everyone */}
+          <div className="flex items-center gap-1 bg-bg-light rounded-lg p-1">
+            <button
+              onClick={() => setEveryone(false)}
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${!everyone ? 'bg-white shadow-sm font-semibold text-purple-dark' : 'text-text-muted'}`}
+            >
+              My Time
+            </button>
+            <button
+              onClick={() => setEveryone(true)}
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${everyone ? 'bg-white shadow-sm font-semibold text-purple-dark' : 'text-text-muted'}`}
+            >
+              Everyone
+            </button>
+          </div>
         </div>
       </div>
 
@@ -286,15 +302,26 @@ export default function TimePage() {
         </div>
       </div>
 
-      {/* Entries */}
-      {loading ? (
+      {/* Timesheet view */}
+      {view === 'timesheet' && (
+        <TimesheetView
+          weekStart={weekStart}
+          entries={entries}
+          onRefresh={loadEntries}
+          projects={projects}
+          taskTypes={taskTypes}
+        />
+      )}
+
+      {/* List view */}
+      {view === 'list' && loading ? (
         <div className="text-text-muted text-sm">Loading…</div>
-      ) : sortedDates.length === 0 ? (
+      ) : view === 'list' && sortedDates.length === 0 ? (
         <div className="card p-8 text-center text-text-muted">
           No time entries for this week.{' '}
           <button onClick={openAdd} className="text-purple-mid underline">Log your first entry</button>
         </div>
-      ) : (
+      ) : view === 'list' ? (
         <div className="space-y-6">
           {sortedDates.map((date) => {
             const dayEntries = byDate[date];
@@ -372,7 +399,7 @@ export default function TimePage() {
             );
           })}
         </div>
-      )}
+      ) : null}
 
       {/* Slide-over form */}
       {showForm && (
