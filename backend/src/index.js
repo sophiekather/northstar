@@ -4,6 +4,8 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const path = require('path');
 
+const { startReminders, runDailyReminders, runWeeklySummary } = require('./services/reminders');
+const { requireAuth } = require('./middleware/auth');
 const authRoutes = require('./routes/auth');
 const clientRoutes = require('./routes/clients');
 const projectRoutes = require('./routes/projects');
@@ -38,5 +40,27 @@ app.use('/api/settings', settingsRoutes);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
+// Test endpoints — fire reminders on demand (auth required)
+app.post('/api/admin/test-daily-reminder', requireAuth, async (req, res) => {
+  try {
+    await runDailyReminders();
+    res.json({ ok: true, message: 'Daily reminder check complete — check your inbox!' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/test-weekly-summary', requireAuth, async (req, res) => {
+  try {
+    await runWeeklySummary();
+    res.json({ ok: true, message: 'Weekly summary sent — check your inbox!' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`NorthStar backend running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`NorthStar backend running on port ${PORT}`);
+  startReminders();
+});
