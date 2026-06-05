@@ -28,6 +28,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-bg-page flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
+          <img src="/favicon.png" alt="NorthStar" className="h-16 w-16 rounded-xl mx-auto mb-3" />
           <h1 className="text-3xl font-bold text-purple-darkest">NorthStar</h1>
           <p className="text-text-muted mt-1 text-sm">Civic North Consulting</p>
         </div>
