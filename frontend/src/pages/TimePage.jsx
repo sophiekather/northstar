@@ -178,6 +178,16 @@ export default function TimePage() {
     loadEntries();
   }
 
+  async function toggleBillable(entry) {
+    await api.put(`/time-entries/${entry.id}`, { isBillable: !entry.isBillable });
+    loadEntries();
+  }
+
+  async function toggleNoteVisible(entry) {
+    await api.put(`/time-entries/${entry.id}`, { noteClientVisible: !entry.noteClientVisible });
+    loadEntries();
+  }
+
   function handleStopTimer() {
     const secs = stopTimer();
     // Never produce 0.00 — the form requires hours > 0
@@ -384,12 +394,47 @@ export default function TimePage() {
                           </p>
                         )}
                       </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        {entry.isBillable ? (
-                          <span className="badge-billable">Billable</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {/* Billable toggle — click to flip for own entries */}
+                        {entry.userId === user?.id ? (
+                          <button
+                            onClick={() => toggleBillable(entry)}
+                            title={entry.isBillable ? 'Click to mark non-billable' : 'Click to mark billable'}
+                            className={`text-xs px-2 py-0.5 rounded-full font-semibold transition-all hover:opacity-70 active:scale-95 cursor-pointer ${entry.isBillable ? 'badge-billable' : 'badge-non-billable'}`}
+                          >
+                            {entry.isBillable ? 'Billable' : 'Non-billable'}
+                          </button>
                         ) : (
-                          <span className="badge-non-billable">Non-billable</span>
+                          <span className={entry.isBillable ? 'badge-billable' : 'badge-non-billable'}>
+                            {entry.isBillable ? 'Billable' : 'Non-billable'}
+                          </span>
                         )}
+
+                        {/* Note visibility toggle — shown for own entries that have a note */}
+                        {entry.note && entry.userId === user?.id && (
+                          <button
+                            onClick={() => toggleNoteVisible(entry)}
+                            title={entry.noteClientVisible ? 'Note is client-visible — click to hide' : 'Note is hidden from client — click to make visible'}
+                            className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-semibold border transition-all hover:opacity-70 active:scale-95 cursor-pointer ${
+                              entry.noteClientVisible
+                                ? 'bg-purple-mid/10 text-purple-mid border-purple-mid/40'
+                                : 'bg-gray-100 text-gray-400 border-gray-200'
+                            }`}
+                          >
+                            {entry.noteClientVisible ? (
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
+                            ) : (
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 4.411m0 0L21 21" />
+                              </svg>
+                            )}
+                            {entry.noteClientVisible ? 'Client' : 'Hidden'}
+                          </button>
+                        )}
+
                         <span className="text-sm font-semibold text-purple-darkest w-12 text-right">
                           {entry.hours}h
                         </span>
