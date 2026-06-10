@@ -44,6 +44,9 @@ export default function TimePage() {
   // Timer — persisted app-wide, survives navigation and refresh
   const { running: timerRunning, seconds: timerSeconds, start: startTimer, stop: stopTimer } = useTimer();
 
+  // List view billable filter
+  const [billableFilter, setBillableFilter] = useState('all'); // 'all' | 'billable' | 'nonbillable'
+
   const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
 
   const loadEntries = useCallback(async () => {
@@ -194,9 +197,16 @@ export default function TimePage() {
     setShowForm(true);
   }
 
+  // Apply billable filter for list view
+  const filteredEntries = entries.filter(e => {
+    if (billableFilter === 'billable') return e.isBillable;
+    if (billableFilter === 'nonbillable') return !e.isBillable;
+    return true;
+  });
+
   // Group entries by date
   const byDate = {};
-  for (const e of entries) {
+  for (const e of filteredEntries) {
     const d = format(parseISO(e.date), 'yyyy-MM-dd');
     if (!byDate[d]) byDate[d] = [];
     byDate[d].push(e);
@@ -263,6 +273,15 @@ export default function TimePage() {
               Timesheet
             </button>
           </div>
+          {/* Billable filter */}
+          <div className="flex items-center gap-1 bg-bg-light rounded-lg p-1">
+            {[['all','All'],['billable','Billable'],['nonbillable','Non-bill.']].map(([val, label]) => (
+              <button key={val} onClick={() => setBillableFilter(val)}
+                className={`px-2.5 py-1 text-xs rounded-md transition-colors ${billableFilter === val ? 'bg-white shadow-sm font-semibold text-purple-dark' : 'text-text-muted'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
           {/* My Time / Everyone */}
           <div className="flex items-center gap-1 bg-bg-light rounded-lg p-1">
             <button
@@ -305,6 +324,8 @@ export default function TimePage() {
           onRefresh={loadEntries}
           projects={projects}
           taskTypes={taskTypes}
+          everyone={everyone}
+          currentUser={user}
         />
       )}
 
@@ -352,7 +373,15 @@ export default function TimePage() {
                           )}
                         </div>
                         {entry.note && (
-                          <p className="text-xs text-text-muted mt-0.5 truncate">{entry.note}</p>
+                          <p className="text-xs text-text-muted mt-0.5 truncate flex items-center gap-1">
+                            {entry.noteClientVisible && (
+                              <svg className="w-3 h-3 shrink-0 text-purple-mid/60" fill="none" stroke="currentColor" viewBox="0 0 24 24" title="Client-visible note">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
+                            )}
+                            {entry.note}
+                          </p>
                         )}
                       </div>
                       <div className="flex items-center gap-3 shrink-0">

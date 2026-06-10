@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import api from '../lib/api';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -125,6 +125,8 @@ export default function ReportsPage() {
   const [customGroupBy, setCustomGroupBy] = useState('');
   const [taskTypes, setTaskTypes] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [showTimeSummaryDetail, setShowTimeSummaryDetail] = useState(true);
+  const [showBillableDetail, setShowBillableDetail] = useState(true);
 
   useEffect(() => {
     api.get('/reports/clients').then(r => setClients(r.data));
@@ -338,7 +340,15 @@ export default function ReportsPage() {
               <thead className="bg-bg-light">
                 <tr>
                   <th className="text-left px-4 py-3 font-semibold text-text-muted text-xs uppercase">
-                    {groupBy === 'client' ? 'Client' : groupBy === 'project' ? 'Project' : 'Person'}
+                    <span className="flex items-center gap-3">
+                      {groupBy === 'client' ? 'Client' : groupBy === 'project' ? 'Project' : 'Person'}
+                      {timeSummary.rows.some(r => r.subRows?.length > 0) && (
+                        <button onClick={() => setShowTimeSummaryDetail(d => !d)}
+                          className="text-xs font-normal text-text-muted hover:text-text-body normal-case tracking-normal transition-colors">
+                          {showTimeSummaryDetail ? 'Hide detail ▲' : 'Show detail ▼'}
+                        </button>
+                      )}
+                    </span>
                   </th>
                   <th className="text-right px-4 py-3 font-semibold text-text-muted text-xs uppercase">Total</th>
                   <th className="text-right px-4 py-3 font-semibold text-text-muted text-xs uppercase">Billable</th>
@@ -348,22 +358,33 @@ export default function ReportsPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {timeSummary.rows.map(r => (
-                  <tr key={r.id} className="hover:bg-bg-light/50">
-                    <td className="px-4 py-3 font-medium text-text-body">{r.label}</td>
-                    <td className="px-4 py-3 text-right">{fmt(r.totalHours)}h</td>
-                    <td className="px-4 py-3 text-right text-olive">{fmt(r.billableHours)}h</td>
-                    <td className="px-4 py-3 text-right text-text-muted">{fmt(r.nonBillableHours)}h</td>
-                    <td className="px-4 py-3 text-right font-medium">{fmtMoney(r.amount)}</td>
-                  </tr>
+                  <Fragment key={r.id}>
+                    <tr className="hover:bg-bg-light/50">
+                      <td className="px-4 py-3 font-medium text-text-body">{r.label}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{fmt(r.totalHours)}h</td>
+                      <td className="px-4 py-3 text-right text-olive tabular-nums">{fmt(r.billableHours)}h</td>
+                      <td className="px-4 py-3 text-right text-text-muted tabular-nums">{fmt(r.nonBillableHours)}h</td>
+                      <td className="px-4 py-3 text-right font-medium tabular-nums">{fmtMoney(r.amount)}</td>
+                    </tr>
+                    {showTimeSummaryDetail && r.subRows?.map(sub => (
+                      <tr key={sub.id} className="hover:bg-bg-light/30 bg-bg-light/20">
+                        <td className="pl-8 pr-4 py-2 text-xs text-text-muted">{sub.label}</td>
+                        <td className="px-4 py-2 text-right text-xs tabular-nums">{fmt(sub.totalHours)}h</td>
+                        <td className="px-4 py-2 text-right text-xs text-olive tabular-nums">{fmt(sub.billableHours)}h</td>
+                        <td className="px-4 py-2 text-right text-xs text-text-muted tabular-nums">{fmt(sub.nonBillableHours)}h</td>
+                        <td className="px-4 py-2 text-right text-xs tabular-nums">{fmtMoney(sub.amount)}</td>
+                      </tr>
+                    ))}
+                  </Fragment>
                 ))}
               </tbody>
               <tfoot className="bg-bg-light font-bold">
                 <tr>
                   <td className="px-4 py-3">Total</td>
-                  <td className="px-4 py-3 text-right">{fmt(timeSummary.totals.totalHours)}h</td>
-                  <td className="px-4 py-3 text-right text-olive">{fmt(timeSummary.totals.billableHours)}h</td>
-                  <td className="px-4 py-3 text-right text-text-muted">{fmt(timeSummary.totals.nonBillableHours)}h</td>
-                  <td className="px-4 py-3 text-right">{fmtMoney(timeSummary.totals.amount)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{fmt(timeSummary.totals.totalHours)}h</td>
+                  <td className="px-4 py-3 text-right text-olive tabular-nums">{fmt(timeSummary.totals.billableHours)}h</td>
+                  <td className="px-4 py-3 text-right text-text-muted tabular-nums">{fmt(timeSummary.totals.nonBillableHours)}h</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{fmtMoney(timeSummary.totals.amount)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -414,7 +435,15 @@ export default function ReportsPage() {
           </div>
 
           <div className="card overflow-hidden mb-4">
-            <div className="px-4 py-3 bg-bg-light text-xs font-semibold text-text-muted uppercase">Hours by {billableGroupLabel}</div>
+            <div className="px-4 py-3 bg-bg-light text-xs font-semibold text-text-muted uppercase flex items-center justify-between">
+              <span>Hours by {billableGroupLabel}</span>
+              {(billable.groups || billable.byTask).some(t => t.subRows?.length > 0) && (
+                <button onClick={() => setShowBillableDetail(d => !d)}
+                  className="text-xs font-normal normal-case tracking-normal text-text-muted hover:text-text-body transition-colors">
+                  {showBillableDetail ? 'Hide detail ▲' : 'Show detail ▼'}
+                </button>
+              )}
+            </div>
             <table className="w-full text-sm">
               <thead className="bg-bg-light border-t border-border">
                 <tr>
@@ -426,12 +455,22 @@ export default function ReportsPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {(billable.groups || billable.byTask).map(t => (
-                  <tr key={t.name} className="hover:bg-bg-light/50">
-                    <td className="px-4 py-3 font-medium">{t.name}</td>
-                    <td className="px-4 py-3 text-right">{fmt(t.hours)}h</td>
-                    <td className="px-4 py-3 text-right text-olive">{fmt(t.billable)}h</td>
-                    <td className="px-4 py-3 text-right text-text-muted">{fmt(t.hours - t.billable)}h</td>
-                  </tr>
+                  <Fragment key={t.name}>
+                    <tr className="hover:bg-bg-light/50">
+                      <td className="px-4 py-3 font-medium">{t.name}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{fmt(t.hours)}h</td>
+                      <td className="px-4 py-3 text-right text-olive tabular-nums">{fmt(t.billable)}h</td>
+                      <td className="px-4 py-3 text-right text-text-muted tabular-nums">{fmt(t.hours - t.billable)}h</td>
+                    </tr>
+                    {showBillableDetail && t.subRows?.map(sub => (
+                      <tr key={sub.name} className="hover:bg-bg-light/30 bg-bg-light/20">
+                        <td className="pl-8 pr-4 py-2 text-xs text-text-muted">{sub.name}</td>
+                        <td className="px-4 py-2 text-right text-xs tabular-nums">{fmt(sub.hours)}h</td>
+                        <td className="px-4 py-2 text-right text-xs text-olive tabular-nums">{fmt(sub.billable)}h</td>
+                        <td className="px-4 py-2 text-right text-xs text-text-muted tabular-nums">{fmt(sub.hours - sub.billable)}h</td>
+                      </tr>
+                    ))}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

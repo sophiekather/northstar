@@ -1,16 +1,27 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import { format, addDays, parseISO, isSameDay } from 'date-fns';
 import api from '../lib/api';
 
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
 function toDateStr(d) { return format(d, 'yyyy-MM-dd'); }
+function isToday(d) { return isSameDay(d, new Date()); }
 
-function isToday(d) {
-  return isSameDay(d, new Date());
+// Row key includes userId when showing everyone to avoid merging rows across users.
+function makeRowKey(userId, projectId, taskTypeId, everyone) {
+  return everyone ? `${userId}::${projectId}::${taskTypeId}` : `${projectId}::${taskTypeId}`;
 }
 
-// Row selector modal — pick project + task to add a new row
+function NoteIcon({ note }) {
+  return (
+    <div className="mt-0.5 flex justify-center" title={note}>
+      <svg className="w-3 h-3 text-purple-mid/70" fill="currentColor" viewBox="0 0 20 20">
+        <path fillRule="evenodd" d="M18 13V5a2 2 0 00-2-2H4a2 2 0 00-2 2v8a2 2 0 002 2h3l3 3 3-3h3a2 2 0 002-2zM5 7a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1zm1 3a1 1 0 100 2h3a1 1 0 100-2H6z" clipRule="evenodd" />
+      </svg>
+    </div>
+  );
+}
+
 function AddRowModal({ projects, taskTypes, onAdd, onClose }) {
   const [projectId, setProjectId] = useState('');
   const [taskTypeId, setTaskTypeId] = useState('');
@@ -22,7 +33,7 @@ function AddRowModal({ projects, taskTypes, onAdd, onClose }) {
   useEffect(() => {
     const unique = {};
     projects.forEach(p => { if (p.client) unique[p.client.id] = p.client; });
-    setClients(Object.values(unique).sort((a,b) => a.name.localeCompare(b.name)));
+    setClients(Object.values(unique).sort((a, b) => a.name.localeCompare(b.name)));
   }, [projects]);
 
   useEffect(() => {
@@ -45,7 +56,11 @@ function AddRowModal({ projects, taskTypes, onAdd, onClose }) {
     if (!projectId || !taskTypeId) return;
     const proj = projects.find(p => p.id === projectId);
     const task = taskTypes.find(t => t.id === taskTypeId);
-    onAdd({ projectId, taskTypeId, projectName: proj?.name, clientName: proj?.client?.name, taskName: task?.name, isBillable: task?.isBillableDefault ?? true });
+    onAdd({
+      projectId, taskTypeId,
+      projectName: proj?.name, clientName: proj?.client?.name,
+      taskName: task?.name, isBillable: task?.isBillableDefault ?? true,
+    });
     onClose();
   }
 
@@ -86,19 +101,18 @@ function AddRowModal({ projects, taskTypes, onAdd, onClose }) {
   );
 }
 
-export default function TimesheetView({ weekStart, entries, onRefresh, projects, taskTypes }) {
-  // weekDays: Mon–Sun
+// Props: everyone — whether the "Everyone" toggle is active
+//        currentUser — { id, name } of the logged-in user
+export default function TimesheetView({ weekStart, entries, onRefresh, projects, taskTypes, everyone, currentUser }) {
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
-  // grid[rowKey][dateStr] = { hours, entryId }
+  // grid[rowKey][dateStr] = { hours, entryId, note }
   const [grid, setGrid] = useState({});
-  // rows[rowKey] = { projectId, taskTypeId, projectName, clientName, taskName, isBillable }
   const [rows, setRows] = useState([]);
-  const [saving, setSaving] = useState({}); // rowKey+date -> true
+  const [saving, setSaving] = useState({});
   const [showAddRow, setShowAddRow] = useState(false);
   const prevEntriesRef = useRef(null);
 
-  // Build grid from entries whenever entries change
   useEffect(() => {
     if (JSON.stringify(entries) === JSON.stringify(prevEntriesRef.current)) return;
     prevEntriesRef.current = entries;
@@ -107,9 +121,12 @@ export default function TimesheetView({ weekStart, entries, onRefresh, projects,
     const newGrid = {};
 
     for (const e of entries) {
-      const key = `${e.projectId}::${e.taskTypeId}`;
+      const uid = e.userId || '';
+      const key = makeRowKey(uid, e.projectId, e.taskTypeId, everyone);
       if (!newRows[key]) {
         newRows[key] = {
+          userId: uid,
+          userName: e.user?.name || '',
           projectId: e.projectId,
           taskTypeId: e.taskTypeId,
           projectName: e.project?.name,
@@ -120,20 +137,18 @@ export default function TimesheetView({ weekStart, entries, onRefresh, projects,
       }
       if (!newGrid[key]) newGrid[key] = {};
       const dateStr = toDateStr(parseISO(e.date));
-      newGrid[key][dateStr] = { hours: e.hours, entryId: e.id };
+      newGrid[key][dateStr] = { hours: e.hours, entryId: e.id, note: e.note || '' };
     }
 
-    // Merge: keep existing rows that aren't in new data (user-added empty rows)
     setRows(prev => {
       const merged = { ...newRows };
       prev.forEach(r => {
-        const k = `${r.projectId}::${r.taskTypeId}`;
+        const k = makeRowKey(r.userId || '', r.projectId, r.taskTypeId, everyone);
         if (!merged[k]) merged[k] = r;
       });
       return Object.values(merged);
     });
     setGrid(prev => {
-      // Deep merge: preserve pending edits
       const merged = { ...newGrid };
       for (const key of Object.keys(prev)) {
         if (!merged[key]) merged[key] = {};
@@ -143,34 +158,42 @@ export default function TimesheetView({ weekStart, entries, onRefresh, projects,
       }
       return merged;
     });
-  }, [entries]);
+  }, [entries, everyone]);
 
-  const cellKey = (rowKey, dateStr) => `${rowKey}__${dateStr}`;
+  // When everyone=true, group rows by user for display.
+  const userGroups = useMemo(() => {
+    if (!everyone) return null;
+    const groups = {};
+    rows.forEach(row => {
+      const uid = row.userId || currentUser?.id || '';
+      if (!groups[uid]) groups[uid] = { userId: uid, userName: row.userName || currentUser?.name || 'Me', rows: [] };
+      groups[uid].rows.push(row);
+    });
+    return Object.values(groups).sort((a, b) => (a.userName || '').localeCompare(b.userName || ''));
+  }, [everyone, rows, currentUser]);
+
+  const cellKey = (rk, dateStr) => `${rk}__${dateStr}`;
 
   async function handleCellBlur(row, dateStr, displayValue) {
-    const rowKey = `${row.projectId}::${row.taskTypeId}`;
+    const rk = makeRowKey(row.userId || '', row.projectId, row.taskTypeId, everyone);
     const hours = parseFloat(displayValue);
-    const existing = grid[rowKey]?.[dateStr];
-    const ck = cellKey(rowKey, dateStr);
+    const existing = grid[rk]?.[dateStr];
+    const ck = cellKey(rk, dateStr);
 
-    // Nothing to do
     if ((isNaN(hours) || hours === 0) && !existing?.entryId) return;
     if (existing?.hours === hours) return;
 
     setSaving(s => ({ ...s, [ck]: true }));
     try {
       if (isNaN(hours) || hours === 0) {
-        // Delete
         if (existing?.entryId) {
           await api.delete(`/time-entries/${existing.entryId}`);
-          setGrid(g => { const n = { ...g }; delete n[rowKey][dateStr]; return n; });
+          setGrid(g => { const n = { ...g }; delete n[rk][dateStr]; return n; });
         }
       } else if (existing?.entryId) {
-        // Update
         await api.put(`/time-entries/${existing.entryId}`, { hours, date: dateStr });
-        setGrid(g => ({ ...g, [rowKey]: { ...g[rowKey], [dateStr]: { hours, entryId: existing.entryId } } }));
+        setGrid(g => ({ ...g, [rk]: { ...g[rk], [dateStr]: { hours, entryId: existing.entryId, note: existing.note || '' } } }));
       } else {
-        // Create
         const r = await api.post('/time-entries', {
           projectId: row.projectId,
           taskTypeId: row.taskTypeId,
@@ -179,7 +202,7 @@ export default function TimesheetView({ weekStart, entries, onRefresh, projects,
           isBillable: row.isBillable,
           hourlyRate: 0,
         });
-        setGrid(g => ({ ...g, [rowKey]: { ...g[rowKey], [dateStr]: { hours, entryId: r.data.id } } }));
+        setGrid(g => ({ ...g, [rk]: { ...g[rk], [dateStr]: { hours, entryId: r.data.id, note: '' } } }));
       }
       onRefresh();
     } catch (err) {
@@ -189,34 +212,101 @@ export default function TimesheetView({ weekStart, entries, onRefresh, projects,
     }
   }
 
-  function handleCellChange(rowKey, dateStr, val) {
+  function handleCellChange(rk, dateStr, val) {
     setGrid(g => ({
       ...g,
-      [rowKey]: { ...(g[rowKey] || {}), [dateStr]: { ...(g[rowKey]?.[dateStr] || {}), hours: val === '' ? '' : val } },
+      [rk]: { ...(g[rk] || {}), [dateStr]: { ...(g[rk]?.[dateStr] || {}), hours: val === '' ? '' : val } },
     }));
   }
 
   function addRow(rowData) {
-    const key = `${rowData.projectId}::${rowData.taskTypeId}`;
-    if (rows.find(r => `${r.projectId}::${r.taskTypeId}` === key)) return;
-    setRows(r => [...r, rowData]);
+    const uid = currentUser?.id || '';
+    const enriched = { ...rowData, userId: uid, userName: currentUser?.name || '' };
+    const key = makeRowKey(uid, rowData.projectId, rowData.taskTypeId, everyone);
+    if (rows.find(r => makeRowKey(r.userId || '', r.projectId, r.taskTypeId, everyone) === key)) return;
+    setRows(r => [...r, enriched]);
     setGrid(g => ({ ...g, [key]: g[key] || {} }));
   }
 
-  function removeRow(rowKey) {
-    setRows(r => r.filter(row => `${row.projectId}::${row.taskTypeId}` !== rowKey));
+  function removeRow(rk) {
+    setRows(r => r.filter(row => makeRowKey(row.userId || '', row.projectId, row.taskTypeId, everyone) !== rk));
   }
 
-  // Day totals
   const dayTotals = weekDays.map(day => {
     const ds = toDateStr(day);
     return rows.reduce((sum, row) => {
-      const key = `${row.projectId}::${row.taskTypeId}`;
-      const h = parseFloat(grid[key]?.[ds]?.hours) || 0;
-      return sum + h;
+      const key = makeRowKey(row.userId || '', row.projectId, row.taskTypeId, everyone);
+      return sum + (parseFloat(grid[key]?.[ds]?.hours) || 0);
     }, 0);
   });
   const weekTotal = dayTotals.reduce((s, h) => s + h, 0);
+
+  function renderDataRow(row) {
+    const rk = makeRowKey(row.userId || '', row.projectId, row.taskTypeId, everyone);
+    // In everyone mode, other users' rows are read-only.
+    const readOnly = everyone && row.userId && row.userId !== currentUser?.id;
+    const rowTotal = weekDays.reduce((sum, day) => {
+      return sum + (parseFloat(grid[rk]?.[toDateStr(day)]?.hours) || 0);
+    }, 0);
+    return (
+      <tr key={rk} className="group hover:bg-bg-light/40">
+        <td className="px-4 py-2">
+          <div className="font-semibold text-text-body leading-tight">
+            {row.projectName}
+            <span className="font-normal text-text-muted"> ({row.clientName})</span>
+          </div>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className="text-xs text-text-muted">{row.taskName}</span>
+            {!row.isBillable && (
+              <span className="text-xs bg-gray-100 text-gray-400 px-1 rounded leading-tight">Non-bill.</span>
+            )}
+          </div>
+        </td>
+        {weekDays.map((day, i) => {
+          const ds = toDateStr(day);
+          const cellData = grid[rk]?.[ds];
+          const displayVal = cellData?.hours === '' ? '' : (cellData?.hours !== undefined ? String(cellData.hours) : '');
+          const ck = cellKey(rk, ds);
+          const isSavingCell = saving[ck];
+          return (
+            <td key={i} className={`px-1 py-2 text-center align-top ${isToday(day) ? 'bg-purple-50/40' : ''}`}>
+              <input
+                type="number"
+                step="0.25"
+                min="0"
+                readOnly={readOnly}
+                className={`w-16 text-center border rounded-md py-1.5 text-sm transition-colors outline-none
+                  ${readOnly ? 'bg-transparent border-transparent cursor-default text-text-body' : ''}
+                  ${!readOnly && isSavingCell ? 'border-olive bg-olive/10' : ''}
+                  ${!readOnly && !isSavingCell ? 'border-border bg-white hover:border-purple-mid focus:border-purple-mid focus:ring-1 focus:ring-purple-mid/30' : ''}
+                  ${parseFloat(displayVal) > 0 ? 'font-semibold text-text-body' : 'text-text-muted'}`}
+                value={displayVal}
+                placeholder="—"
+                onChange={e => !readOnly && handleCellChange(rk, ds, e.target.value)}
+                onBlur={e => !readOnly && handleCellBlur(row, ds, e.target.value)}
+                onFocus={e => !readOnly && e.target.select()}
+                title={cellData?.note || undefined}
+              />
+              {cellData?.note && <NoteIcon note={cellData.note} />}
+            </td>
+          );
+        })}
+        <td className="px-4 py-2 text-right font-bold text-text-body align-top pt-3">
+          {rowTotal > 0 ? rowTotal.toFixed(1) : <span className="text-text-muted font-normal">0</span>}
+        </td>
+        <td className="pr-2 py-2 align-top pt-2.5">
+          {!readOnly && (
+            <button onClick={() => removeRow(rk)}
+              className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-red-400 transition-all p-1 rounded">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </td>
+      </tr>
+    );
+  }
 
   return (
     <div>
@@ -238,75 +328,52 @@ export default function TimesheetView({ weekStart, entries, onRefresh, projects,
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {rows.length === 0 && (
+            {rows.length === 0 && !userGroups && (
               <tr>
                 <td colSpan={10} className="text-center text-text-muted py-10 text-sm">
                   No rows yet. Click <strong>+ Add row</strong> below to start.
                 </td>
               </tr>
             )}
-            {rows.map(row => {
-              const rowKey = `${row.projectId}::${row.taskTypeId}`;
-              const rowTotal = weekDays.reduce((sum, day) => {
-                const h = parseFloat(grid[rowKey]?.[toDateStr(day)]?.hours) || 0;
-                return sum + h;
-              }, 0);
+
+            {userGroups ? userGroups.map(group => {
+              const userDayTotals = weekDays.map(day => {
+                const ds = toDateStr(day);
+                return group.rows.reduce((sum, row) => {
+                  const key = makeRowKey(row.userId || '', row.projectId, row.taskTypeId, everyone);
+                  return sum + (parseFloat(grid[key]?.[ds]?.hours) || 0);
+                }, 0);
+              });
+              const userWeekTotal = userDayTotals.reduce((s, h) => s + h, 0);
               return (
-                <tr key={rowKey} className="group hover:bg-bg-light/40">
-                  <td className="px-4 py-2">
-                    <div className="font-semibold text-text-body leading-tight">{row.projectName}
-                      <span className="font-normal text-text-muted"> ({row.clientName})</span>
-                    </div>
-                    <div className="text-xs text-text-muted mt-0.5">{row.taskName}</div>
-                  </td>
-                  {weekDays.map((day, i) => {
-                    const ds = toDateStr(day);
-                    const cellVal = grid[rowKey]?.[ds]?.hours;
-                    const displayVal = cellVal === '' ? '' : (cellVal !== undefined ? String(cellVal) : '');
-                    const ck = cellKey(rowKey, ds);
-                    const isSavingCell = saving[ck];
-                    return (
-                      <td key={i} className={`px-1 py-2 text-center ${isToday(day) ? 'bg-purple-50/40' : ''}`}>
-                        <input
-                          type="number"
-                          step="0.25"
-                          min="0"
-                          className={`w-16 text-center border rounded-md py-1.5 text-sm transition-colors outline-none
-                            ${isSavingCell ? 'border-olive bg-olive/10' : 'border-border bg-white hover:border-purple-mid focus:border-purple-mid focus:ring-1 focus:ring-purple-mid/30'}
-                            ${parseFloat(displayVal) > 0 ? 'font-semibold text-text-body' : 'text-text-muted'}`}
-                          value={displayVal}
-                          placeholder="—"
-                          onChange={e => handleCellChange(rowKey, ds, e.target.value)}
-                          onBlur={e => handleCellBlur(row, ds, e.target.value)}
-                          onFocus={e => e.target.select()}
-                        />
+                <Fragment key={group.userId}>
+                  {/* User header row with per-day subtotals */}
+                  <tr className="bg-purple-darkest/5 border-t-2 border-border">
+                    <td className="px-4 py-2 font-bold text-purple-darkest text-sm">{group.userName}</td>
+                    {userDayTotals.map((h, i) => (
+                      <td key={i} className={`text-center py-2 text-xs font-semibold tabular-nums ${isToday(weekDays[i]) ? 'text-purple-mid' : 'text-text-muted'}`}>
+                        {h > 0 ? h.toFixed(1) : <span className="opacity-30">—</span>}
                       </td>
-                    );
-                  })}
-                  <td className="px-4 py-2 text-right font-bold text-text-body">
-                    {rowTotal > 0 ? rowTotal.toFixed(1) : <span className="text-text-muted font-normal">0</span>}
-                  </td>
-                  <td className="pr-2 py-2">
-                    <button onClick={() => removeRow(rowKey)}
-                      className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-red-400 transition-all p-1 rounded">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </td>
-                </tr>
+                    ))}
+                    <td className="text-right px-4 py-2 text-xs font-bold text-purple-darkest tabular-nums">
+                      {userWeekTotal.toFixed(1)}
+                    </td>
+                    <td />
+                  </tr>
+                  {group.rows.map(renderDataRow)}
+                </Fragment>
               );
-            })}
+            }) : rows.map(renderDataRow)}
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-border bg-bg-light font-bold">
               <td className="px-4 py-3 text-xs uppercase text-text-muted">Day Total</td>
               {dayTotals.map((h, i) => (
-                <td key={i} className={`text-center py-3 text-sm ${isToday(weekDays[i]) ? 'text-purple-mid' : 'text-text-body'}`}>
+                <td key={i} className={`text-center py-3 text-sm tabular-nums ${isToday(weekDays[i]) ? 'text-purple-mid' : 'text-text-body'}`}>
                   {h > 0 ? h.toFixed(1) : <span className="text-text-muted font-normal">0</span>}
                 </td>
               ))}
-              <td className="text-right px-4 py-3 text-sm text-purple-darkest">
+              <td className="text-right px-4 py-3 text-sm text-purple-darkest tabular-nums">
                 {weekTotal.toFixed(1)}
               </td>
               <td />

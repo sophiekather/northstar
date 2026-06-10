@@ -41,27 +41,43 @@ router.get('/time-summary', async (req, res) => {
     },
   });
 
-  // Group
+  // Group with secondary (sub-row) breakdown
+  // person → by project; client → by project; project → by person
   const groups = {};
   for (const e of entries) {
-    let key, label;
+    let key, label, subKey, subLabel;
     if (groupBy === 'project') {
       key = e.project.id;
       label = `${e.project.client.name} — ${e.project.name}`;
+      subKey = e.user.id;
+      subLabel = e.user.name;
     } else if (groupBy === 'person') {
       key = e.user.id;
       label = e.user.name;
+      subKey = e.project.id;
+      subLabel = `${e.project.client.name} — ${e.project.name}`;
     } else {
       key = e.project.client.id;
       label = e.project.client.name;
+      subKey = e.project.id;
+      subLabel = e.project.name;
     }
-    if (!groups[key]) groups[key] = { id: key, label, totalHours: 0, billableHours: 0, nonBillableHours: 0, amount: 0 };
+    if (!groups[key]) groups[key] = { id: key, label, totalHours: 0, billableHours: 0, nonBillableHours: 0, amount: 0, subs: {} };
     groups[key].totalHours += e.hours;
     if (e.isBillable) { groups[key].billableHours += e.hours; groups[key].amount += e.hours * e.hourlyRate; }
     else groups[key].nonBillableHours += e.hours;
+
+    if (!groups[key].subs[subKey]) groups[key].subs[subKey] = { id: subKey, label: subLabel, totalHours: 0, billableHours: 0, nonBillableHours: 0, amount: 0 };
+    groups[key].subs[subKey].totalHours += e.hours;
+    if (e.isBillable) { groups[key].subs[subKey].billableHours += e.hours; groups[key].subs[subKey].amount += e.hours * e.hourlyRate; }
+    else groups[key].subs[subKey].nonBillableHours += e.hours;
   }
 
-  const rows = Object.values(groups).sort((a, b) => b.totalHours - a.totalHours);
+  const rows = Object.values(groups).map(g => ({
+    id: g.id, label: g.label,
+    totalHours: g.totalHours, billableHours: g.billableHours, nonBillableHours: g.nonBillableHours, amount: g.amount,
+    subRows: Object.values(g.subs).sort((a, b) => b.totalHours - a.totalHours),
+  })).sort((a, b) => b.totalHours - a.totalHours);
   const totals = rows.reduce((acc, r) => {
     acc.totalHours += r.totalHours;
     acc.billableHours += r.billableHours;
@@ -100,19 +116,42 @@ router.get('/billable-breakdown', async (req, res) => {
     if (e.isBillable) { billable += e.hours; billableAmount += e.hours * e.hourlyRate; }
     else nonBillable += e.hours;
 
-    let key;
-    if (groupBy === 'person') key = e.user.name;
-    else if (groupBy === 'project') key = `${e.project.client.name} — ${e.project.name}`;
-    else if (groupBy === 'client') key = e.project.client.name;
-    else key = e.taskType.name;
+    // Primary key
+    let key, subKey, subLabel;
+    if (groupBy === 'person') {
+      key = e.user.name;
+      subKey = `${e.project.client.name}__${e.project.name}`;
+      subLabel = `${e.project.client.name} — ${e.project.name}`;
+    } else if (groupBy === 'project') {
+      key = `${e.project.client.name} — ${e.project.name}`;
+      subKey = e.user.name;
+      subLabel = e.user.name;
+    } else if (groupBy === 'client') {
+      key = e.project.client.name;
+      subKey = e.project.name;
+      subLabel = e.project.name;
+    } else {
+      // task (default) — secondary by client
+      key = e.taskType.name;
+      subKey = e.project.client.name;
+      subLabel = e.project.client.name;
+    }
 
-    if (!byGroup[key]) byGroup[key] = { name: key, hours: 0, billable: 0 };
+    if (!byGroup[key]) byGroup[key] = { name: key, hours: 0, billable: 0, subs: {} };
     byGroup[key].hours += e.hours;
     if (e.isBillable) byGroup[key].billable += e.hours;
+
+    if (!byGroup[key].subs[subKey]) byGroup[key].subs[subKey] = { name: subLabel, hours: 0, billable: 0 };
+    byGroup[key].subs[subKey].hours += e.hours;
+    if (e.isBillable) byGroup[key].subs[subKey].billable += e.hours;
   }
 
   const total = billable + nonBillable;
-  const groups = Object.values(byGroup).sort((a, b) => b.hours - a.hours);
+  const groups = Object.values(byGroup).map(g => ({
+    name: g.name, hours: g.hours, billable: g.billable,
+    subRows: Object.values(g.subs).sort((a, b) => b.hours - a.hours),
+  })).sort((a, b) => b.hours - a.hours);
+
   res.json({
     billableHours: billable,
     nonBillableHours: nonBillable,
