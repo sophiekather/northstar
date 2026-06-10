@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Outlet, NavLink, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { useTimer, formatTimer } from '../hooks/useTimer';
 
 const navLinks = [
   { to: '/time', label: 'Time' },
@@ -13,6 +14,7 @@ const navLinks = [
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const { running, seconds } = useTimer();
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -53,26 +55,41 @@ export default function Layout() {
             </div>
           </div>
 
-          <div className="hidden md:flex items-center gap-3">
-            <span className="text-sm text-white/70">{user?.name}</span>
-            <button onClick={logout} className="text-sm text-white/60 hover:text-white transition-colors">
-              Log out
+          <div className="flex items-center gap-3">
+            {running && (
+              <Link
+                to="/time"
+                className="flex items-center gap-1.5 bg-red-500 text-white text-xs font-semibold px-2.5 py-1 rounded-full hover:bg-red-600 transition-colors tabular-nums"
+                title="Timer running — go to Time page to stop"
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
+                </span>
+                {formatTimer(seconds)}
+              </Link>
+            )}
+            <div className="hidden md:flex items-center gap-3">
+              <span className="text-sm text-white/70">{user?.name}</span>
+              <button onClick={logout} className="text-sm text-white/60 hover:text-white transition-colors">
+                Log out
+              </button>
+            </div>
+
+            <button
+              className="md:hidden text-white/80 hover:text-white"
+              onClick={() => setMenuOpen((o) => !o)}
+              aria-label="Menu"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {menuOpen ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                )}
+              </svg>
             </button>
           </div>
-
-          <button
-            className="md:hidden text-white/80 hover:text-white"
-            onClick={() => setMenuOpen((o) => !o)}
-            aria-label="Menu"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              {menuOpen ? (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              )}
-            </svg>
-          </button>
         </div>
 
         {menuOpen && (

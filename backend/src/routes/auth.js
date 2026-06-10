@@ -19,10 +19,13 @@ router.post('/login', async (req, res) => {
 
   const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '30d' });
 
+  // The frontend proxies /api to this server (Vercel rewrite in prod, Vite
+  // proxy in dev), so the cookie is always first-party. sameSite:'none' would
+  // be treated as third-party and dropped by iOS/WebKit browsers.
   res.cookie('token', token, {
     httpOnly: true,
-    secure: true,
-    sameSite: 'none',
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
     maxAge: 30 * 24 * 60 * 60 * 1000,
   });
 
@@ -30,7 +33,11 @@ router.post('/login', async (req, res) => {
 });
 
 router.post('/logout', (req, res) => {
-  res.clearCookie('token');
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+  });
   res.json({ ok: true });
 });
 

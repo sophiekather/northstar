@@ -21,14 +21,16 @@ function dateRange(start, end) {
 }
 
 // ── Time Summary ─────────────────────────────────────────────────────────────
-// GET /api/reports/time-summary?start=&end=&clientId=&groupBy=client|project|person
+// GET /api/reports/time-summary?start=&end=&clientId=&projectId=&userId=&groupBy=client|project|person
 router.get('/time-summary', async (req, res) => {
-  const { start, end, clientId, groupBy = 'client' } = req.query;
+  const { start, end, clientId, projectId, userId, groupBy = 'client' } = req.query;
 
   const where = { status: 'CONFIRMED' };
   const dr = dateRange(start, end);
   if (dr) where.date = dr;
   if (clientId) where.project = { clientId };
+  if (projectId) where.projectId = projectId;
+  if (userId) where.userId = userId;
 
   const entries = await prisma.timeEntry.findMany({
     where,
@@ -72,42 +74,54 @@ router.get('/time-summary', async (req, res) => {
 });
 
 // ── Billable Breakdown ────────────────────────────────────────────────────────
+// GET /api/reports/billable-breakdown?start=&end=&clientId=&projectId=&userId=&groupBy=task|person|project|client
 router.get('/billable-breakdown', async (req, res) => {
-  const { start, end, clientId } = req.query;
+  const { start, end, clientId, projectId, userId, groupBy = 'task' } = req.query;
   const where = { status: 'CONFIRMED' };
   const dr = dateRange(start, end);
   if (dr) where.date = dr;
   if (clientId) where.project = { clientId };
+  if (projectId) where.projectId = projectId;
+  if (userId) where.userId = userId;
 
   const entries = await prisma.timeEntry.findMany({
     where,
     include: {
+      user: { select: { id: true, name: true } },
       project: { include: { client: { select: { id: true, name: true } } } },
       taskType: { select: { name: true } },
     },
   });
 
   let billable = 0, nonBillable = 0, billableAmount = 0;
-  const byTask = {};
+  const byGroup = {};
 
   for (const e of entries) {
     if (e.isBillable) { billable += e.hours; billableAmount += e.hours * e.hourlyRate; }
     else nonBillable += e.hours;
 
-    const t = e.taskType.name;
-    if (!byTask[t]) byTask[t] = { name: t, hours: 0, billable: 0 };
-    byTask[t].hours += e.hours;
-    if (e.isBillable) byTask[t].billable += e.hours;
+    let key;
+    if (groupBy === 'person') key = e.user.name;
+    else if (groupBy === 'project') key = `${e.project.client.name} — ${e.project.name}`;
+    else if (groupBy === 'client') key = e.project.client.name;
+    else key = e.taskType.name;
+
+    if (!byGroup[key]) byGroup[key] = { name: key, hours: 0, billable: 0 };
+    byGroup[key].hours += e.hours;
+    if (e.isBillable) byGroup[key].billable += e.hours;
   }
 
   const total = billable + nonBillable;
+  const groups = Object.values(byGroup).sort((a, b) => b.hours - a.hours);
   res.json({
     billableHours: billable,
     nonBillableHours: nonBillable,
     totalHours: total,
     billablePct: total ? Math.round((billable / total) * 100) : 0,
     billableAmount,
-    byTask: Object.values(byTask).sort((a, b) => b.hours - a.hours),
+    groupBy,
+    groups,
+    byTask: groups, // legacy alias
   });
 });
 
@@ -153,14 +167,15 @@ router.get('/retainer-burn', async (req, res) => {
 });
 
 // ── Custom / Raw entries ──────────────────────────────────────────────────────
-// GET /api/reports/entries?start=&end=&clientId=&userId=&isBillable=&taskTypeId=
+// GET /api/reports/entries?start=&end=&clientId=&projectId=&userId=&isBillable=&taskTypeId=
 router.get('/entries', async (req, res) => {
-  const { start, end, clientId, userId, isBillable, taskTypeId } = req.query;
+  const { start, end, clientId, projectId, userId, isBillable, taskTypeId } = req.query;
 
   const where = { status: 'CONFIRMED' };
   const dr = dateRange(start, end);
   if (dr) where.date = dr;
   if (clientId) where.project = { clientId };
+  if (projectId) where.projectId = projectId;
   if (userId) where.userId = userId;
   if (isBillable !== undefined) where.isBillable = isBillable === 'true';
   if (taskTypeId) where.taskTypeId = taskTypeId;
@@ -187,6 +202,25 @@ router.get('/entries', async (req, res) => {
     amount: e.isBillable ? e.hours * e.hourlyRate : 0,
     note: e.note || '',
   })));
+});
+
+// ── Users list for filter dropdown ───────────────────────────────────────────
+router.get('/users', async (req, res) => {
+  const users = await prisma.user.findMany({
+    select: { id: true, name: true },
+    orderBy: { name: 'asc' },
+  });
+  res.json(users);
+});
+
+// ── Projects list for filter dropdown ────────────────────────────────────────
+router.get('/projects', async (req, res) => {
+  const projects = await prisma.project.findMany({
+    where: { isActive: true },
+    select: { id: true, name: true, clientId: true, client: { select: { name: true } } },
+    orderBy: [{ client: { name: 'asc' } }, { name: 'asc' }],
+  });
+  res.json(projects);
 });
 
 // ── Clients list for filter dropdown ─────────────────────────────────────────

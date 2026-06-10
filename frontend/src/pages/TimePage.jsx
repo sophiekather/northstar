@@ -1,17 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, parseISO, isSameDay } from 'date-fns';
 import api from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
+import { useTimer, formatTimer } from '../hooks/useTimer';
 import TimesheetView from '../components/TimesheetView';
-
-function pad(n) { return String(n).padStart(2, '0'); }
-
-function formatTimer(secs) {
-  const h = Math.floor(secs / 3600);
-  const m = Math.floor((secs % 3600) / 60);
-  const s = secs % 60;
-  return `${pad(h)}:${pad(m)}:${pad(s)}`;
-}
 
 function ProjectTypeBadge({ type }) {
   if (type === 'FIXED_FEE') return <span className="badge-fixed badge">Fixed Fee</span>;
@@ -49,10 +41,8 @@ export default function TimePage() {
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Timer
-  const [timerRunning, setTimerRunning] = useState(false);
-  const [timerSeconds, setTimerSeconds] = useState(0);
-  const timerRef = useRef(null);
+  // Timer — persisted app-wide, survives navigation and refresh
+  const { running: timerRunning, seconds: timerSeconds, start: startTimer, stop: stopTimer } = useTimer();
 
   const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
 
@@ -185,17 +175,22 @@ export default function TimePage() {
     loadEntries();
   }
 
-  function startTimer() {
-    setTimerRunning(true);
-    timerRef.current = setInterval(() => setTimerSeconds((s) => s + 1), 1000);
-  }
-
-  function stopTimer() {
-    clearInterval(timerRef.current);
-    setTimerRunning(false);
-    const hours = (timerSeconds / 3600).toFixed(2);
-    setForm((f) => ({ ...f, hours }));
-    setTimerSeconds(0);
+  function handleStopTimer() {
+    const secs = stopTimer();
+    // Never produce 0.00 — the form requires hours > 0
+    const hours = Math.max(secs / 3600, 0.01).toFixed(2);
+    setEditEntry(null);
+    setForm({
+      date: format(new Date(), 'yyyy-MM-dd'),
+      clientId: '',
+      projectId: '',
+      taskTypeId: '',
+      hours,
+      isBillable: true,
+      note: '',
+      noteClientVisible: false,
+    });
+    setFormError('');
     setShowForm(true);
   }
 
@@ -226,7 +221,7 @@ export default function TimePage() {
               Start Timer
             </button>
           ) : (
-            <button onClick={stopTimer} className="bg-red-500 text-white px-4 py-2 rounded-lg font-semibold text-sm hover:bg-red-600 flex items-center gap-2">
+            <button onClick={handleStopTimer} className="bg-red-500 text-white px-4 py-2 rounded-lg font-semibold text-sm hover:bg-red-600 flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <rect x="6" y="6" width="12" height="12" rx="1" strokeWidth="2" />
               </svg>

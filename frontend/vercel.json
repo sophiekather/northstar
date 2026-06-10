@@ -1,3 +1,7 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/" }]
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://northstar-production-8bd8.up.railway.app/api/:path*" },
+    { "source": "/uploads/:path*", "destination": "https://northstar-production-8bd8.up.railway.app/uploads/:path*" },
+    { "source": "/(.*)", "destination": "/" }
+  ]
 }
