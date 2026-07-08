@@ -4,7 +4,8 @@
   "type": "commonjs",
   "scripts": {
     "dev": "nodemon src/index.js",
-    "start": "prisma db push --skip-generate && node prisma/ensure-internal.js && node src/index.js",
+    "start": "node src/index.js",
+    "deploy:schema": "prisma db push --skip-generate && node prisma/ensure-internal.js",
     "seed": "node prisma/seed.js"
   },
   "dependencies": {
