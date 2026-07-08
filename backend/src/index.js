@@ -63,6 +63,15 @@ app.post('/api/admin/test-weekly-summary', requireAuth, async (req, res) => {
   }
 });
 
+// A failed DB call in an async route must never take down the whole process
+// (in modern Node an unhandled rejection is fatal by default).
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled rejection:', err);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`NorthStar backend running on port ${PORT}`);
