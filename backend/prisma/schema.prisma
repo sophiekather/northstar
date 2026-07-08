@@ -18,6 +18,8 @@ model User {
   timeEntries         TimeEntry[]
   expenses            Expense[]
   mileageEntries      MileageEntry[]
+  tasks               Task[]
+  milestones          Milestone[]
 }
 
 model Client {
@@ -27,10 +29,22 @@ model Client {
   keywords     String[]
   notes        String?
   isActive     Boolean        @default(true)
+  isInternal   Boolean        @default(false)
   createdAt    DateTime       @default(now())
   projects     Project[]
   expenses     Expense[]
   mileage      MileageEntry[]
+  contacts     ClientContact[]
+}
+
+model ClientContact {
+  id        String  @id @default(cuid())
+  clientId  String
+  client    Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name      String
+  email     String?
+  role      String?
+  isPrimary Boolean @default(false)
 }
 
 model Project {
@@ -45,11 +59,90 @@ model Project {
   endDate         DateTime?
   isActive        Boolean                @default(true)
   notes           String?
+  scopeOfWork     String?
+  sowNumber       String?
   createdAt       DateTime               @default(now())
   timeEntries     TimeEntry[]
   projectTasks    ProjectTask[]
   retainerConfig  RetainerConfig?
   expenseConfigs  ProjectExpenseConfig[]
+  tasks           Task[]
+  milestones      Milestone[]
+  payments        PaymentInstallment[]
+  fileLinks       FileLink[]
+  callLogs        CallLog[]
+}
+
+model Task {
+  id               String        @id @default(cuid())
+  projectId        String
+  project          Project       @relation(fields: [projectId], references: [id])
+  deliverableId    String?
+  deliverable      ProjectTask?  @relation(fields: [deliverableId], references: [id])
+  title            String
+  notes            String?
+  assigneeUserId   String?
+  assigneeUser     User?         @relation(fields: [assigneeUserId], references: [id])
+  assigneeName     String?
+  isSubcontractor  Boolean       @default(false)
+  subHours         Float?
+  subExpenseAmount Float?
+  priority         TaskPriority  @default(MEDIUM)
+  status           TaskStatus    @default(TODO)
+  dueDate          DateTime?
+  rank             Int           @default(0)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+}
+
+model Milestone {
+  id          String          @id @default(cuid())
+  projectId   String
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  status      MilestoneStatus @default(UPCOMING)
+  dueDate     DateTime?
+  completedAt DateTime?
+  ownerId     String?
+  owner       User?           @relation(fields: [ownerId], references: [id])
+  tags        String[]
+  atRisk      Boolean         @default(false)
+  sortOrder   Int             @default(0)
+  notes       String?
+}
+
+model PaymentInstallment {
+  id        String    @id @default(cuid())
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  label     String
+  amount    Float
+  dueDate   DateTime?
+  isPaid    Boolean   @default(false)
+  paidAt    DateTime?
+  payeeType PayeeType @default(CLIENT)
+  payeeName String?
+  sortOrder Int       @default(0)
+}
+
+model FileLink {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  label     String
+  url       String
+  createdAt DateTime @default(now())
+}
+
+model CallLog {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title     String
+  date      DateTime
+  summary   String?
+  source    String   @default("MANUAL")
+  createdAt DateTime @default(now())
 }
 
 model TaskType {
@@ -64,12 +157,14 @@ model TaskType {
 }
 
 model ProjectTask {
-  id           String    @id @default(cuid())
-  projectId    String
-  project      Project   @relation(fields: [projectId], references: [id])
-  taskTypeId   String
-  taskType     TaskType  @relation(fields: [taskTypeId], references: [id])
-  isActive     Boolean   @default(true)
+  id            String    @id @default(cuid())
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id])
+  taskTypeId    String
+  taskType      TaskType  @relation(fields: [taskTypeId], references: [id])
+  isActive      Boolean   @default(true)
+  forecastHours Float?
+  tasks         Task[]
 
   @@unique([projectId, taskTypeId])
 }
@@ -161,6 +256,29 @@ enum ProjectType {
   FIXED_FEE
   TIME_MATERIALS
   NON_BILLABLE
+}
+
+enum TaskPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum MilestoneStatus {
+  UPCOMING
+  IN_PROGRESS
+  DONE
+}
+
+enum PayeeType {
+  CLIENT
+  SUBCONTRACTOR
 }
 
 enum EntrySource {

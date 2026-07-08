@@ -4,10 +4,11 @@ import { useAuth } from '../hooks/useAuth';
 import { useTimer, formatTimer } from '../hooks/useTimer';
 
 const navLinks = [
+  { to: '/clients', label: 'Clients' },
+  { to: '/tasks', label: 'Tasks' },
   { to: '/time', label: 'Time' },
   { to: '/expenses', label: 'Expenses' },
   { to: '/projects', label: 'Projects' },
-  { to: '/team', label: 'Team', comingSoon: true },
   { to: '/reports', label: 'Reports' },
   { to: '/settings', label: 'Settings' },
 ];

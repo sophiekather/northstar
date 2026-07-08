@@ -18,6 +18,17 @@ async function main() {
   });
 
   await prisma.user.upsert({
+    where: { email: 'david@civicnorthconsulting.com' },
+    update: {},
+    create: {
+      name: 'David Poulin',
+      email: 'david@civicnorthconsulting.com',
+      passwordHash,
+      weeklyHourTarget: 35,
+    },
+  });
+
+  await prisma.user.upsert({
     where: { email: 'april@civicnorthconsulting.com' },
     update: {},
     create: {
@@ -70,6 +81,26 @@ async function main() {
       update: {},
       create: cat,
     });
+  }
+
+  // v2: permanent internal client so non-client work has a real home.
+  // Flag an existing same-named client rather than creating a duplicate.
+  const internal = await prisma.client.findFirst({ where: { isInternal: true } });
+  if (!internal) {
+    const existing = await prisma.client.findFirst({ where: { name: 'Civic North Internal' } });
+    if (existing) {
+      await prisma.client.update({ where: { id: existing.id }, data: { isInternal: true } });
+    } else {
+      await prisma.client.create({
+        data: {
+          name: 'Civic North Internal',
+          emails: [],
+          keywords: ['internal'],
+          notes: 'Permanent home for internal (non-client) projects and tasks.',
+          isInternal: true,
+        },
+      });
+    }
   }
 
   console.log('Seed complete.');

@@ -178,14 +178,24 @@ export default function TimePage() {
     loadEntries();
   }
 
+  // BUG-1 fix: update the single entry in place instead of refetching — a full
+  // reload flips `loading`, remounts the list, and resets the scroll position.
   async function toggleBillable(entry) {
-    await api.put(`/time-entries/${entry.id}`, { isBillable: !entry.isBillable });
-    loadEntries();
+    setEntries((es) => es.map((e) => (e.id === entry.id ? { ...e, isBillable: !entry.isBillable } : e)));
+    try {
+      await api.put(`/time-entries/${entry.id}`, { isBillable: !entry.isBillable });
+    } catch {
+      setEntries((es) => es.map((e) => (e.id === entry.id ? { ...e, isBillable: entry.isBillable } : e)));
+    }
   }
 
   async function toggleNoteVisible(entry) {
-    await api.put(`/time-entries/${entry.id}`, { noteClientVisible: !entry.noteClientVisible });
-    loadEntries();
+    setEntries((es) => es.map((e) => (e.id === entry.id ? { ...e, noteClientVisible: !entry.noteClientVisible } : e)));
+    try {
+      await api.put(`/time-entries/${entry.id}`, { noteClientVisible: !entry.noteClientVisible });
+    } catch {
+      setEntries((es) => es.map((e) => (e.id === entry.id ? { ...e, noteClientVisible: entry.noteClientVisible } : e)));
+    }
   }
 
   function handleStopTimer() {

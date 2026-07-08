@@ -11,6 +11,11 @@ import SettingsPage from './pages/SettingsPage';
 import ClientsSettingsPage from './pages/ClientsSettingsPage';
 import TaskTypesSettingsPage from './pages/TaskTypesSettingsPage';
 import ReportsPage from './pages/ReportsPage';
+import ClientsPage from './pages/ClientsPage';
+import ProjectOverviewPage from './pages/ProjectOverviewPage';
+import TimelineBoardPage from './pages/TimelineBoardPage';
+import DeliverableDetailPage from './pages/DeliverableDetailPage';
+import TasksPage from './pages/TasksPage';
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
@@ -28,6 +33,12 @@ function AppRoutes() {
         <Route index element={<Navigate to="/time" replace />} />
         <Route path="time" element={<TimePage />} />
         <Route path="expenses" element={<ExpensesPage />} />
+        <Route path="clients" element={<ClientsPage />} />
+        <Route path="clients/:clientId" element={<ClientsPage />} />
+        <Route path="clients/:clientId/projects/:projectId" element={<ProjectOverviewPage />} />
+        <Route path="clients/:clientId/projects/:projectId/timeline" element={<TimelineBoardPage />} />
+        <Route path="clients/:clientId/projects/:projectId/deliverables/:deliverableId" element={<DeliverableDetailPage />} />
+        <Route path="tasks" element={<TasksPage />} />
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/:id" element={<ProjectDetailPage />} />
         <Route path="reports" element={<ReportsPage />} />
