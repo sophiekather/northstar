@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
 import {
   Avatar, BurnRing, BurnBar, StateChip, ProjectKindChip, SlideOver, fmtDate, burnColors,
-  PROJECT_STATUSES,
+  PROJECT_STATUSES, ProjectStatusChip,
 } from '../lib/ui';
 import ClientTree from '../components/ClientTree';
 import TaskBoard from '../components/TaskBoard';
@@ -25,7 +25,7 @@ function Empty({ children }) {
 }
 
 // Burn banner (wireframe 2a): ring + headline + chip, retainer vs deliverables
-function BurnBanner({ burn }) {
+function BurnBanner({ burn, status }) {
   const colors = burnColors(burn.state);
   const isRetainer = burn.mode === 'RETAINER';
   const noForecast = burn.forecast == null;
@@ -58,6 +58,7 @@ function BurnBanner({ burn }) {
           {chip}
         </span>
       )}
+      <ProjectStatusChip status={status} />
     </div>
   );
 }
@@ -250,7 +251,7 @@ export default function ProjectOverviewPage() {
           </div>
         )}
 
-        <div className="mb-4"><BurnBanner burn={data.burn} /></div>
+        <div className="mb-4"><BurnBanner burn={data.burn} status={data.status} /></div>
 
         {tab === 'tasks' && <TaskBoard lockedProjectId={projectId} />}
 
