@@ -66,7 +66,7 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { clientId, name, type, budgetHours, budgetDollars, startDate, endDate, notes, taskTypeIds } = req.body;
+  const { clientId, name, type, status, budgetHours, budgetDollars, startDate, endDate, notes, taskTypeIds } = req.body;
   if (!clientId || !name || !type) return res.status(400).json({ error: 'clientId, name, and type required' });
 
   const project = await prisma.project.create({
@@ -74,6 +74,7 @@ router.post('/', async (req, res) => {
       clientId,
       name,
       type,
+      status: status || undefined,
       budgetHours: budgetHours || null,
       budgetDollars: budgetDollars || null,
       startDate: startDate ? new Date(startDate) : null,
@@ -89,13 +90,14 @@ router.post('/', async (req, res) => {
 });
 
 router.put('/:id', async (req, res) => {
-  const { name, type, budgetHours, budgetDollars, startDate, endDate, notes, taskTypeIds } = req.body;
+  const { name, type, status, budgetHours, budgetDollars, startDate, endDate, notes, taskTypeIds } = req.body;
 
   const project = await prisma.project.update({
     where: { id: req.params.id },
     data: {
       name,
       type,
+      status: status || undefined,
       budgetHours: budgetHours ?? null,
       budgetDollars: budgetDollars ?? null,
       startDate: startDate ? new Date(startDate) : null,
@@ -461,6 +463,15 @@ router.put('/:id/call-logs/:cid', async (req, res) => {
 router.delete('/:id/call-logs/:cid', async (req, res) => {
   await prisma.callLog.delete({ where: { id: req.params.cid } });
   res.json({ ok: true });
+});
+
+const PROJECT_STATUSES = ['OPEN', 'CLOSED', 'IN_PROGRESS', 'SUBMITTED', 'PENDING_AWARD', 'BID_AWARDED', 'BID_NOT_AWARDED'];
+
+router.patch('/:id/status', async (req, res) => {
+  const { status } = req.body;
+  if (!PROJECT_STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  const project = await prisma.project.update({ where: { id: req.params.id }, data: { status } });
+  res.json(project);
 });
 
 router.patch('/:id/archive', async (req, res) => {

@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
 import {
   Avatar, BurnRing, BurnBar, StateChip, ProjectKindChip, SlideOver, fmtDate, burnColors,
+  PROJECT_STATUSES,
 } from '../lib/ui';
 import ClientTree from '../components/ClientTree';
 import TaskBoard from '../components/TaskBoard';
@@ -215,6 +216,17 @@ export default function ProjectOverviewPage() {
             <h1 className="page-title truncate">{data.name}</h1>
             <ProjectKindChip isRetainer={data.isRetainer} />
             {data.burn.forecast != null && <StateChip state={data.atRisk ? 'warn' : 'ok'} />}
+            <select
+              className="badge bg-white text-text-body border border-border cursor-pointer hover:border-purple-mid focus:outline-none"
+              value={data.status || 'OPEN'}
+              onChange={async (e) => {
+                const status = e.target.value;
+                setData((d) => ({ ...d, status }));
+                await api.patch(`/projects/${projectId}/status`, { status });
+              }}
+            >
+              {PROJECT_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
           </div>
           <div className="flex gap-1.5">
             {[['overview', 'Overview'], ['tasks', 'Tasks'], ['time', 'Time']].map(([key, label]) => (

@@ -79,6 +79,38 @@ export function TaskStatusChip({ status }) {
   return <span className="badge bg-gray-100 text-text-muted">To do</span>;
 }
 
+// Project status — order matches the dropdown order Sophie requested
+export const PROJECT_STATUSES = [
+  { value: 'OPEN', label: 'Open' },
+  { value: 'CLOSED', label: 'Closed' },
+  { value: 'IN_PROGRESS', label: 'In Progress' },
+  { value: 'SUBMITTED', label: 'Submitted' },
+  { value: 'PENDING_AWARD', label: 'Pending Award' },
+  { value: 'BID_AWARDED', label: 'Bid Awarded' },
+  { value: 'BID_NOT_AWARDED', label: 'Bid Not Awarded' },
+];
+
+export const PROJECT_STATUS_LABELS = Object.fromEntries(PROJECT_STATUSES.map((s) => [s.value, s.label]));
+
+const PROJECT_STATUS_STYLES = {
+  OPEN: 'bg-bg-light text-purple-dark border border-border',
+  CLOSED: 'bg-gray-100 text-text-muted border border-border',
+  IN_PROGRESS: 'bg-purple-mid/10 text-purple-mid border border-purple-mid/30',
+  SUBMITTED: 'bg-amber-50 text-amber-700 border border-amber-200',
+  PENDING_AWARD: 'bg-amber-50 text-amber-700 border border-amber-200',
+  BID_AWARDED: 'bg-olive/10 text-olive border border-olive/30',
+  BID_NOT_AWARDED: 'bg-red-50 text-red-700 border border-red-200',
+};
+
+export function ProjectStatusChip({ status }) {
+  if (!status) return null;
+  return (
+    <span className={`badge ${PROJECT_STATUS_STYLES[status] || PROJECT_STATUS_STYLES.OPEN}`}>
+      {PROJECT_STATUS_LABELS[status] || status}
+    </span>
+  );
+}
+
 // Project type chip — Deliverables (purple) vs Retainer (olive), per wireframe
 export function ProjectKindChip({ isRetainer }) {
   return isRetainer ? (

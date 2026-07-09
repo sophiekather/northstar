@@ -53,6 +53,7 @@ model Project {
   client          Client                 @relation(fields: [clientId], references: [id])
   name            String
   type            ProjectType
+  status          ProjectStatus          @default(OPEN)
   budgetHours     Float?
   budgetDollars   Float?
   startDate       DateTime?
@@ -256,6 +257,16 @@ enum ProjectType {
   FIXED_FEE
   TIME_MATERIALS
   NON_BILLABLE
+}
+
+enum ProjectStatus {
+  OPEN
+  CLOSED
+  IN_PROGRESS
+  SUBMITTED
+  PENDING_AWARD
+  BID_AWARDED
+  BID_NOT_AWARDED
 }
 
 enum TaskPriority {

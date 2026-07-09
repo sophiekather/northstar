@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
+import { PROJECT_STATUSES, ProjectStatusChip } from '../lib/ui';
 
 function ProjectTypeBadge({ type }) {
   if (type === 'FIXED_FEE') return <span className="badge-fixed badge">Fixed Fee</span>;
@@ -39,7 +40,7 @@ export default function ProjectsPage() {
   const [editProject, setEditProject] = useState(null);
 
   const [form, setForm] = useState({
-    clientId: '', name: '', type: 'FIXED_FEE',
+    clientId: '', name: '', type: 'FIXED_FEE', status: 'OPEN',
     budgetHours: '', budgetDollars: '',
     startDate: '', endDate: '', notes: '',
     taskTypeIds: [],
@@ -68,7 +69,7 @@ export default function ProjectsPage() {
 
   function openAdd() {
     setEditProject(null);
-    setForm({ clientId: '', name: '', type: 'FIXED_FEE', budgetHours: '', budgetDollars: '', startDate: '', endDate: '', notes: '', taskTypeIds: [] });
+    setForm({ clientId: '', name: '', type: 'FIXED_FEE', status: 'OPEN', budgetHours: '', budgetDollars: '', startDate: '', endDate: '', notes: '', taskTypeIds: [] });
     setFormError('');
     setShowForm(true);
   }
@@ -79,6 +80,7 @@ export default function ProjectsPage() {
       clientId: proj.clientId,
       name: proj.name,
       type: proj.type,
+      status: proj.status || 'OPEN',
       budgetHours: proj.budgetHours || '',
       budgetDollars: proj.budgetDollars || '',
       startDate: proj.startDate ? proj.startDate.slice(0, 10) : '',
@@ -102,6 +104,7 @@ export default function ProjectsPage() {
         clientId: form.clientId,
         name: form.name,
         type: form.type,
+        status: form.status,
         budgetHours: form.budgetHours ? parseFloat(form.budgetHours) : null,
         budgetDollars: form.budgetDollars ? parseFloat(form.budgetDollars) : null,
         startDate: form.startDate || null,
@@ -192,6 +195,7 @@ export default function ProjectsPage() {
                             {proj.name}
                           </Link>
                           <ProjectTypeBadge type={proj.type} />
+                          <ProjectStatusChip status={proj.status} />
                           {!proj.isActive && <span className="badge bg-gray-100 text-text-muted">Archived</span>}
                         </div>
                         {proj.budgetHours && (
@@ -250,6 +254,12 @@ export default function ProjectsPage() {
                   <option value="FIXED_FEE">Fixed Fee</option>
                   <option value="TIME_MATERIALS">Time & Materials</option>
                   <option value="NON_BILLABLE">Non-Billable</option>
+                </select>
+              </div>
+              <div>
+                <label className="form-label">Status</label>
+                <select className="form-select" value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
+                  {PROJECT_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-3">
