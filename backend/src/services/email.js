@@ -29,13 +29,14 @@ function fmtDue(date) {
 }
 
 /**
- * Assigned-task table for the daily digest. Overdue rows are red, everything
- * else olive — the same colour language the task board uses.
- * `today` is a YYYY-MM-DD Pacific calendar date; due today is not overdue.
+ * Assigned-task table, shared by the daily digest and the Friday summary.
+ * Overdue rows are red, everything else olive — the same colour language the
+ * task board uses. `today` is a YYYY-MM-DD Pacific calendar date, so a task due
+ * today is not overdue. `more` appends an "N more" line when the list is capped.
  */
-function taskSection(tasks, today) {
+function taskSection(tasks, today, { heading = 'Your open tasks', empty = 'Nothing open assigned to you right now. 🎉', more = 0 } = {}) {
   if (tasks.length === 0) {
-    return `<p style="font-size: 15px; color: #7a7a8a; margin: 0 0 24px;">Nothing open assigned to you right now. 🎉</p>`;
+    return `<p style="font-size: 15px; color: #7a7a8a; margin: 0 0 24px;">${empty}</p>`;
   }
 
   const rows = tasks.map((t) => {
@@ -55,12 +56,17 @@ function taskSection(tasks, today) {
       </tr>`;
   }).join('');
 
+  const moreLine = more > 0
+    ? `<div style="font-size: 13px; color: #7a7a8a; padding-top: 10px;">+ ${more} more open task${more === 1 ? '' : 's'} on the board</div>`
+    : '';
+
   return `
     <div style="margin-bottom: 28px;">
       <div style="font-size: 13px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
-        Your open tasks (${tasks.length})
+        ${heading} (${tasks.length})
       </div>
       <table style="width: 100%; border-collapse: collapse;">${rows}</table>
+      ${moreLine}
     </div>`;
 }
 
@@ -115,10 +121,14 @@ async function sendDailyReminder(user, { tasks = [], loggedToday = false, today 
 /**
  * Friday weekly summary email
  */
-async function sendWeeklySummary(user, { hoursLogged, hourTarget, topProjects }) {
+async function sendWeeklySummary(user, { hoursLogged, hourTarget, topProjects, tasks = [], moreTasks = 0, today }) {
   const firstName = user.name.split(' ')[0];
   const pct = Math.round((hoursLogged / hourTarget) * 100);
   const onTrack = hoursLogged >= hourTarget;
+  const todayStr = today || new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+  const overdueCount = tasks.filter((t) => t.dueDate && dueDateStr(t.dueDate) < todayStr).length;
 
   const projectRows = topProjects.map(p =>
     `<tr>
@@ -130,7 +140,7 @@ async function sendWeeklySummary(user, { hoursLogged, hourTarget, topProjects })
   await getResend().emails.send({
     from: FROM,
     to: user.email,
-    subject: `📋 Your week in review — ${hoursLogged.toFixed(1)} of ${hourTarget} hrs logged`,
+    subject: `📋 Your week in review — ${hoursLogged.toFixed(1)} of ${hourTarget} hrs logged${overdueCount ? ` · ${overdueCount} overdue` : ''}`,
     html: `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px; color: #2d2d2d;">
         <div style="font-size: 22px; font-weight: 700; color: #4a5240; margin-bottom: 8px;">NorthStar</div>
@@ -162,6 +172,13 @@ async function sendWeeklySummary(user, { hoursLogged, hourTarget, topProjects })
             ${projectRows}
           </table>
         </div>` : ''}
+
+        <!-- The week ahead: what's still open, soonest first -->
+        ${taskSection(tasks, todayStr, {
+          heading: 'On your plate next week',
+          empty: 'Nothing open assigned to you — you head into next week clear. 🎉',
+          more: moreTasks,
+        })}
 
         <a href="${process.env.FRONTEND_URL || 'https://northstar-eta-ten.vercel.app'}/time"
            style="display: inline-block; background: #4a5240; color: #fff; text-decoration: none;

@@ -46,7 +46,9 @@ function getPacificWeekBounds() {
   sunday.setDate(monday.getDate() + 6);
   sunday.setHours(23, 59, 59, 999);
 
-  return { monday, sunday };
+  // pacificDate is today's YYYY-MM-DD calendar date — due dates are compared as
+  // calendar dates, never as instants (they're stored at UTC midnight).
+  return { monday, sunday, pacificDate };
 }
 
 /**
@@ -97,11 +99,18 @@ async function runDailyReminders() {
 
 /**
  * Friday weekly summary — runs at 3:00 PM Pacific on Fridays.
- * Sends a summary of hours logged this week vs. target, broken down by project.
+ * Hours logged this week vs. target, broken down by project, plus the tasks
+ * waiting for you next week.
  */
 async function runWeeklySummary() {
   console.log('[reminders] Running weekly summary…');
-  const { monday, sunday } = getPacificWeekBounds();
+  const { monday, sunday, pacificDate } = getPacificWeekBounds();
+
+  // The summary goes out Friday afternoon, so "the week ahead" runs to the end
+  // of next week. Anything due beyond that isn't next week's problem.
+  const horizon = new Date(sunday);
+  horizon.setDate(horizon.getDate() + 7);
+  const MAX_LISTED = 12;
 
   const users = await prisma.user.findMany({
     where: { notificationsEnabled: true, isActive: true },
@@ -137,11 +146,31 @@ async function runWeeklySummary() {
       .sort((a, b) => b.hours - a.hours)
       .slice(0, 5);
 
+    // What's waiting next week: anything overdue or due through the horizon,
+    // plus undated open work so nothing sits invisible just for lacking a date.
+    const taskWhere = {
+      assigneeUserId: user.id,
+      status: { not: 'DONE' },
+      OR: [{ dueDate: { lte: horizon } }, { dueDate: null }],
+    };
+    const [tasks, openCount] = await Promise.all([
+      prisma.task.findMany({
+        where: taskWhere,
+        include: { project: { select: { name: true, client: { select: { name: true } } } } },
+        orderBy: [{ dueDate: { sort: 'asc', nulls: 'last' } }, { rank: 'asc' }],
+        take: MAX_LISTED,
+      }),
+      prisma.task.count({ where: { assigneeUserId: user.id, status: { not: 'DONE' } } }),
+    ]);
+
     try {
       await sendWeeklySummary(user, {
         hoursLogged,
         hourTarget: user.weeklyHourTarget,
         topProjects,
+        tasks,
+        moreTasks: Math.max(openCount - tasks.length, 0),
+        today: pacificDate,
       });
     } catch (err) {
       console.error(`[reminders] Failed to send weekly summary to ${user.email}:`, err.message);
