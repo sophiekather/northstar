@@ -3,11 +3,12 @@ import { Outlet, NavLink, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTimer, formatTimer } from '../hooks/useTimer';
 
-// Left-rail nav per wireframe 2a: Clients · Deliverables · Timesheet · Expenses,
-// brand at top, user pinned at the bottom.
+// Left-rail nav per wireframe 2a, brand at top, user pinned at the bottom.
+// "Tasks" is the app-wide word for a work item; "Deliverable" stays reserved
+// for a project's scoped line item (ProjectTask + forecast hours).
 const primaryLinks = [
   { to: '/clients', label: 'Clients' },
-  { to: '/tasks', label: 'Deliverables' },
+  { to: '/tasks', label: 'Tasks' },
   { to: '/time', label: 'Timesheet' },
   { to: '/expenses', label: 'Expenses' },
 ];
@@ -16,6 +17,7 @@ const secondaryLinks = [
   { to: '/reports', label: 'Reports' },
   { to: '/settings', label: 'Settings' },
 ];
+const adminLink = { to: '/admin', label: 'Admin' };
 
 function RailIcon({ active }) {
   return <i className={`w-4 h-4 rounded-[5px] shrink-0 ${active ? 'bg-purple-dark' : 'bg-border'}`} />;
@@ -46,6 +48,7 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const { running, seconds } = useTimer();
   const [menuOpen, setMenuOpen] = useState(false);
+  const isAdmin = user?.role === 'ADMIN';
 
   const timerChip = running && (
     <Link
@@ -75,6 +78,7 @@ export default function Layout() {
         <div className="border-t border-border my-3 mx-2" />
         <nav className="flex flex-col gap-0.5">
           {secondaryLinks.map((l) => <RailLink key={l.to} {...l} small />)}
+          {isAdmin && <RailLink {...adminLink} small />}
         </nav>
         <div className="flex-1" />
         {timerChip && <div className="px-1 pb-3">{timerChip}</div>}
@@ -117,7 +121,7 @@ export default function Layout() {
         </div>
         {menuOpen && (
           <div className="border-t border-white/10 px-4 py-3 flex flex-col gap-2">
-            {[...primaryLinks, ...secondaryLinks].map((link) => (
+            {[...primaryLinks, ...secondaryLinks, ...(isAdmin ? [adminLink] : [])].map((link) => (
               <NavLink
                 key={link.to}
                 to={link.to}

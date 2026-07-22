@@ -19,7 +19,9 @@ function getPacificDayBounds() {
 
   const startOfDay = new Date(`${pacificDate}T00:00:00-07:00`);
   const endOfDay   = new Date(`${pacificDate}T23:59:59-07:00`);
-  return { startOfDay, endOfDay };
+  // pacificDate is the YYYY-MM-DD calendar date — due dates are compared as
+  // calendar dates, never as instants (they're stored at UTC midnight).
+  return { startOfDay, endOfDay, pacificDate };
 }
 
 /**
@@ -48,36 +50,47 @@ function getPacificWeekBounds() {
 }
 
 /**
- * Daily check — runs at 3:00 PM Pacific (23:00 UTC, accounts for PDT).
- * Sends reminder to any user who has notifications on and hasn't logged time today.
- * Cron: "0 23 * * 1-5"  (Mon–Fri, 23:00 UTC = 3pm PDT / 4pm PST — close enough,
- * Railway lets us set TZ=America/Los_Angeles so the cron fires at true 3pm local)
+ * Daily digest — runs at 3:00 PM Pacific on weekdays.
+ * Every user with notifications on gets their assigned open tasks; the email
+ * additionally nudges anyone who hasn't logged time yet today.
+ * (Railway sets TZ=America/Los_Angeles so the cron fires at true 3pm local.)
  */
 async function runDailyReminders() {
-  console.log('[reminders] Running daily check…');
-  const { startOfDay, endOfDay } = getPacificDayBounds();
+  console.log('[reminders] Running daily digest…');
+  const { startOfDay, endOfDay, pacificDate } = getPacificDayBounds();
 
   const users = await prisma.user.findMany({
-    where: { notificationsEnabled: true },
+    where: { notificationsEnabled: true, isActive: true },
   });
 
   for (const user of users) {
-    const count = await prisma.timeEntry.count({
-      where: {
-        userId: user.id,
-        date: { gte: startOfDay, lte: endOfDay },
-        status: 'CONFIRMED',
-      },
-    });
+    const [count, tasks] = await Promise.all([
+      prisma.timeEntry.count({
+        where: {
+          userId: user.id,
+          date: { gte: startOfDay, lte: endOfDay },
+          status: 'CONFIRMED',
+        },
+      }),
+      prisma.task.findMany({
+        where: { assigneeUserId: user.id, status: { not: 'DONE' } },
+        include: { project: { select: { name: true, client: { select: { name: true } } } } },
+        // Dated work first (soonest first), then undated by board rank.
+        orderBy: [{ dueDate: { sort: 'asc', nulls: 'last' } }, { rank: 'asc' }],
+        take: 15,
+      }),
+    ]);
 
-    if (count === 0) {
-      try {
-        await sendDailyReminder(user);
-      } catch (err) {
-        console.error(`[reminders] Failed to send daily reminder to ${user.email}:`, err.message);
-      }
-    } else {
-      console.log(`[reminders] ${user.name} already logged ${count} entr${count === 1 ? 'y' : 'ies'} today — skipping`);
+    // Nothing to say: time is in and the plate is clean.
+    if (count > 0 && tasks.length === 0) {
+      console.log(`[reminders] ${user.name} logged ${count} entr${count === 1 ? 'y' : 'ies'} and has no open tasks — skipping`);
+      continue;
+    }
+
+    try {
+      await sendDailyReminder(user, { tasks, loggedToday: count > 0, today: pacificDate });
+    } catch (err) {
+      console.error(`[reminders] Failed to send daily digest to ${user.email}:`, err.message);
     }
   }
 }
@@ -91,7 +104,7 @@ async function runWeeklySummary() {
   const { monday, sunday } = getPacificWeekBounds();
 
   const users = await prisma.user.findMany({
-    where: { notificationsEnabled: true },
+    where: { notificationsEnabled: true, isActive: true },
   });
 
   for (const user of users) {
@@ -152,7 +165,7 @@ function startReminders() {
     runWeeklySummary().catch(err => console.error('[reminders] Weekly summary error:', err));
   }, { timezone: 'America/Los_Angeles' });
 
-  console.log('[reminders] Scheduled: daily at 3pm PT (Mon–Fri), weekly summary at 3pm PT (Fri)');
+  console.log('[reminders] Scheduled: daily digest at 3pm PT (Mon–Fri), weekly summary at 3pm PT (Fri)');
 }
 
 module.exports = { startReminders, runDailyReminders, runWeeklySummary };

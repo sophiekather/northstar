@@ -240,7 +240,7 @@ export default function TimePage() {
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <h1 className="page-title">Time</h1>
+        <h1 className="page-title">Timesheet</h1>
         <div className="flex items-center gap-2">
           {!timerRunning ? (
             <button onClick={startTimer} className="btn-secondary flex items-center gap-1.5">
@@ -288,9 +288,11 @@ export default function TimePage() {
               className={`px-3 py-1 text-sm rounded-md transition-colors ${view === 'list' ? 'bg-white shadow-sm font-semibold text-purple-dark' : 'text-text-muted'}`}>
               List
             </button>
+            {/* "Grid", not "Timesheet" — the page itself is the Timesheet, and
+                naming a view inside it the same thing is what made this confusing. */}
             <button onClick={() => setView('timesheet')}
               className={`px-3 py-1 text-sm rounded-md transition-colors ${view === 'timesheet' ? 'bg-white shadow-sm font-semibold text-purple-dark' : 'text-text-muted'}`}>
-              Timesheet
+              Grid
             </button>
           </div>
           {/* Billable filter */}
@@ -385,6 +387,11 @@ export default function TimePage() {
                           <span className="text-sm text-text-body truncate">{entry.project?.name}</span>
                           <span className="text-text-muted text-sm">·</span>
                           <span className="text-sm text-text-muted">{entry.taskType?.name}</span>
+                          {entry.task && (
+                            <span className="badge bg-purple-mid/10 text-purple-mid" title={`Logged from task: ${entry.task.title}`}>
+                              Task
+                            </span>
+                          )}
                           {everyone && (
                             <>
                               <span className="text-text-muted text-sm">·</span>
@@ -543,9 +550,12 @@ export default function TimePage() {
               </div>
               <div>
                 <label className="form-label">Hours *</label>
+                {/* step="any": a 0.25 step off a 0.01 floor makes 1.5 (and any
+                    timer-derived value like 0.83) fail browser validation, which
+                    blocks submit. Hours are validated in handleSave and server-side. */}
                 <input
                   type="number"
-                  step="0.25"
+                  step="any"
                   min="0.01"
                   className="form-input"
                   value={form.hours}

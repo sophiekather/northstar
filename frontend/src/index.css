@@ -45,8 +45,19 @@ body {
   .form-input {
     @apply w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-mid focus:border-transparent;
   }
+  /* pr-10 leaves room for the forms-plugin dropdown arrow — a plain px-3 puts
+     the arrow on top of the label text. */
   .form-select {
-    @apply w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-mid focus:border-transparent bg-white;
+    @apply w-full border border-border rounded-lg pl-3 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-mid focus:border-transparent bg-white;
+  }
+  /* Compact auto-width select for filter bars. Same arrow clearance, and a
+     min-width so short labels ("Status: Open") don't collapse under the arrow. */
+  .filter-select {
+    @apply border border-border rounded-lg pl-3 pr-9 py-1.5 text-xs font-medium text-text-body bg-white
+           min-w-[9.5rem] focus:outline-none focus:ring-2 focus:ring-purple-mid focus:border-transparent
+           hover:border-purple-mid/50 transition-colors;
+    background-position: right 0.6rem center;
+    background-size: 1.1em 1.1em;
   }
   .page-title {
     @apply text-2xl font-bold text-purple-darkest;

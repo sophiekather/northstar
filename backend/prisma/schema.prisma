@@ -12,6 +12,8 @@ model User {
   name                String
   email               String         @unique
   passwordHash        String
+  role                Role           @default(MEMBER)
+  isActive            Boolean        @default(true)
   weeklyHourTarget    Float          @default(35)
   notificationsEnabled Boolean       @default(true)
   createdAt           DateTime       @default(now())
@@ -94,6 +96,7 @@ model Task {
   rank             Int           @default(0)
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
+  timeEntries      TimeEntry[]
 }
 
 model Milestone {
@@ -178,6 +181,8 @@ model TimeEntry {
   project             Project      @relation(fields: [projectId], references: [id])
   taskTypeId          String
   taskType            TaskType     @relation(fields: [taskTypeId], references: [id])
+  taskId              String?
+  task                Task?        @relation(fields: [taskId], references: [id])
   date                DateTime
   hours               Float
   hourlyRate          Float
@@ -267,6 +272,11 @@ enum ProjectStatus {
   PENDING_AWARD
   BID_AWARDED
   BID_NOT_AWARDED
+}
+
+enum Role {
+  ADMIN
+  MEMBER
 }
 
 enum TaskPriority {

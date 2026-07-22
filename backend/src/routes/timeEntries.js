@@ -33,6 +33,7 @@ router.get('/', async (req, res) => {
       user: { select: { id: true, name: true } },
       project: { include: { client: { select: { id: true, name: true } } } },
       taskType: true,
+      task: { select: { id: true, title: true } },
     },
     orderBy: { date: 'desc' },
   });
@@ -41,7 +42,7 @@ router.get('/', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { projectId, taskTypeId, date, hours, hourlyRate, isBillable, note, noteClientVisible } = req.body;
+  const { projectId, taskTypeId, taskId, date, hours, hourlyRate, isBillable, note, noteClientVisible } = req.body;
   if (!projectId || !taskTypeId || !date || !hours) {
     return res.status(400).json({ error: 'projectId, taskTypeId, date, and hours required' });
   }
@@ -52,6 +53,7 @@ router.post('/', async (req, res) => {
       userId: req.userId,
       projectId,
       taskTypeId,
+      taskId: taskId || null,
       date: parseDate(date),
       hours,
       hourlyRate: hourlyRate || 0,
@@ -63,13 +65,14 @@ router.post('/', async (req, res) => {
       user: { select: { id: true, name: true } },
       project: { include: { client: { select: { id: true, name: true } } } },
       taskType: true,
+      task: { select: { id: true, title: true } },
     },
   });
   res.status(201).json(entry);
 });
 
 router.put('/:id', async (req, res) => {
-  const { projectId, taskTypeId, date, hours, hourlyRate, isBillable, note, noteClientVisible } = req.body;
+  const { projectId, taskTypeId, taskId, date, hours, hourlyRate, isBillable, note, noteClientVisible } = req.body;
   if (hours !== undefined && hours <= 0) return res.status(400).json({ error: 'Hours must be greater than 0' });
 
   const existing = await prisma.timeEntry.findUnique({ where: { id: req.params.id } });
@@ -81,6 +84,7 @@ router.put('/:id', async (req, res) => {
     data: {
       projectId,
       taskTypeId,
+      taskId: taskId !== undefined ? taskId || null : undefined,
       date: date ? parseDate(date) : undefined,
       hours,
       hourlyRate,
@@ -92,6 +96,7 @@ router.put('/:id', async (req, res) => {
       user: { select: { id: true, name: true } },
       project: { include: { client: { select: { id: true, name: true } } } },
       taskType: true,
+      task: { select: { id: true, title: true } },
     },
   });
   res.json(entry);

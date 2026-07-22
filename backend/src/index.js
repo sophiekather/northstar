@@ -16,6 +16,7 @@ const mileageRoutes = require('./routes/mileage');
 const settingsRoutes = require('./routes/settings');
 const reportsRoutes = require('./routes/reports');
 const taskRoutes = require('./routes/tasks');
+const userRoutes = require('./routes/users');
 
 const app = express();
 
@@ -41,6 +42,7 @@ app.use('/api/mileage', mileageRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/tasks', taskRoutes);
+app.use('/api/users', userRoutes);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 

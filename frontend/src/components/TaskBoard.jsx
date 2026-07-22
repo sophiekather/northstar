@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { format } from 'date-fns';
 import api from '../lib/api';
-import { Avatar, PriorityChip, TaskStatusChip, SlideOver, fmtDate, TASK_STATUS_LABELS } from '../lib/ui';
+import {
+  Avatar, PriorityChip, TaskStatusChip, SlideOver, ClientProject, DueDate, TASK_STATUS_LABELS,
+} from '../lib/ui';
 
 const EMPTY_FORM = {
   title: '', projectId: '', assigneeMode: 'user', assigneeUserId: '', assigneeName: '',
@@ -31,6 +34,13 @@ export default function TaskBoard({ lockedProjectId }) {
   const [saving, setSaving] = useState(false);
   const dragIndex = useRef(null);
 
+  // Log-time slide-over — logs against a task and lands on the timesheet
+  const [timeTask, setTimeTask] = useState(null);
+  const [taskTypes, setTaskTypes] = useState([]);
+  const [timeForm, setTimeForm] = useState(null);
+  const [timeError, setTimeError] = useState('');
+  const [timeSaving, setTimeSaving] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -52,6 +62,7 @@ export default function TaskBoard({ lockedProjectId }) {
   useEffect(() => {
     api.get('/projects').then((r) => setProjects(r.data));
     api.get('/reports/users').then((r) => setUsers(r.data));
+    api.get('/task-types').then((r) => setTaskTypes(r.data));
   }, []);
 
   const clients = useMemo(() => {
@@ -174,6 +185,58 @@ export default function TaskBoard({ lockedProjectId }) {
     }
   }
 
+  // Task types offered when logging time: the project's own deliverables if it
+  // has them, otherwise the full list (same rule as the Timesheet form).
+  function typesForProject(projectId) {
+    const proj = projects.find((p) => p.id === projectId);
+    const ids = (proj?.projectTasks || []).map((pt) => pt.taskTypeId);
+    return ids.length ? taskTypes.filter((t) => ids.includes(t.id)) : taskTypes;
+  }
+
+  function openLogTime(task) {
+    const options = typesForProject(task.projectId);
+    setTimeTask(task);
+    setTimeForm({
+      date: format(new Date(), 'yyyy-MM-dd'),
+      hours: '',
+      // Prefer the deliverable this task rolls up to, so the entry lands in the
+      // right bucket on the project burn without anyone picking it.
+      taskTypeId: task.deliverable?.taskTypeId || options[0]?.id || '',
+      isBillable: true,
+      note: task.title,
+    });
+    setTimeError('');
+  }
+
+  async function handleLogTime(e) {
+    e.preventDefault();
+    const hours = parseFloat(timeForm.hours);
+    if (!timeForm.taskTypeId) return setTimeError('Pick a task type');
+    if (!hours || hours <= 0) return setTimeError('Hours must be greater than 0');
+
+    setTimeSaving(true);
+    try {
+      await api.post('/time-entries', {
+        projectId: timeTask.projectId,
+        taskTypeId: timeForm.taskTypeId,
+        taskId: timeTask.id,
+        date: timeForm.date,
+        hours,
+        isBillable: timeForm.isBillable,
+        note: timeForm.note || null,
+      });
+      // Reflect the new total on the card without a full board refetch.
+      setTasks((ts) =>
+        ts.map((t) => (t.id === timeTask.id ? { ...t, loggedHours: (t.loggedHours || 0) + hours } : t))
+      );
+      setTimeTask(null);
+    } catch (err) {
+      setTimeError(err.response?.data?.error || 'Could not log time');
+    } finally {
+      setTimeSaving(false);
+    }
+  }
+
   async function handleDelete() {
     if (!editTask) return;
     if (!confirm(`Delete task "${editTask.title}"?`)) return;
@@ -186,40 +249,42 @@ export default function TaskBoard({ lockedProjectId }) {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2 mb-4">
+      {/* Filter bar — every control is the same height and carries its own
+          label, so the row reads as one strip rather than mixed widgets. */}
+      <div className="flex flex-wrap items-center gap-2 mb-5">
         {!lockedProjectId && (
           <>
-            <select className="form-select !w-auto text-xs" value={clientFilter} onChange={(e) => { setClientFilter(e.target.value); setProjectFilter(''); }}>
+            <select className="filter-select" value={clientFilter} onChange={(e) => { setClientFilter(e.target.value); setProjectFilter(''); }}>
               <option value="">Client: All</option>
-              {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {clients.map((c) => <option key={c.id} value={c.id}>Client: {c.name}</option>)}
             </select>
-            <select className="form-select !w-auto text-xs" value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}>
+            <select className="filter-select" value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}>
               <option value="">Project: All</option>
               {projects.filter((p) => !clientFilter || p.clientId === clientFilter).map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+                <option key={p.id} value={p.id}>Project: {p.name}</option>
               ))}
             </select>
           </>
         )}
-        <select className="form-select !w-auto text-xs" value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
+        <select className="filter-select" value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
           <option value="">Assignee: All</option>
-          {users.map((u) => <option key={u.id} value={`user:${u.id}`}>{u.name}</option>)}
-          {subNames.length > 0 && <option value="subs">All subcontractors</option>}
-          {subNames.map((n) => <option key={n} value={`sub:${n}`}>{n} (sub)</option>)}
+          {users.map((u) => <option key={u.id} value={`user:${u.id}`}>Assignee: {u.name}</option>)}
+          {subNames.length > 0 && <option value="subs">Assignee: All subcontractors</option>}
+          {subNames.map((n) => <option key={n} value={`sub:${n}`}>Assignee: {n} (sub)</option>)}
         </select>
-        <select className="form-select !w-auto text-xs" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select className="filter-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="open">Status: Open</option>
-          <option value="TODO">To do</option>
-          <option value="IN_PROGRESS">In progress</option>
-          <option value="DONE">Done</option>
+          <option value="TODO">Status: To do</option>
+          <option value="IN_PROGRESS">Status: In progress</option>
+          <option value="DONE">Status: Done</option>
         </select>
-        <select className="form-select !w-auto text-xs" value={sort} onChange={(e) => setSort(e.target.value)}>
+        <select className="filter-select" value={sort} onChange={(e) => setSort(e.target.value)}>
           <option value="rank">Sort: Priority rank</option>
           <option value="priority">Sort: Priority level</option>
           <option value="due">Sort: Due date</option>
         </select>
         <div className="flex-1" />
-        <button onClick={openAdd} className="btn-primary">+ New task</button>
+        <button onClick={openAdd} className="btn-primary shrink-0">+ New task</button>
       </div>
 
       <div className="flex items-center justify-between mb-2">
@@ -259,10 +324,7 @@ export default function TaskBoard({ lockedProjectId }) {
                   <button onClick={() => openEdit(task)} className="font-semibold text-sm text-purple-darkest hover:underline text-left">
                     {task.title}
                   </button>
-                  <div className="text-xs text-text-muted truncate">
-                    {task.project?.client?.name}{task.project ? ` · ${task.project.name}` : ''}
-                    {task.deliverable?.taskType?.name ? ` · ${task.deliverable.taskType.name}` : ''}
-                  </div>
+                  <ClientProject project={task.project} suffix={task.deliverable?.taskType?.name} />
                 </div>
                 <PriorityChip priority={task.priority} />
               </div>
@@ -274,8 +336,22 @@ export default function TaskBoard({ lockedProjectId }) {
                     <span className="badge bg-olive/10 text-olive border border-olive/30">Subcontractor</span>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
-                  {task.dueDate && <span className="text-xs text-text-muted">Due {fmtDate(task.dueDate)}</span>}
+                <div className="flex items-center gap-2 shrink-0">
+                  {task.loggedHours > 0 && (
+                    <span className="text-xs text-text-muted tabular-nums" title="Hours logged against this task">
+                      {task.loggedHours.toFixed(1)}h
+                    </span>
+                  )}
+                  {!task.isSubcontractor && (
+                    <button
+                      onClick={() => openLogTime(task)}
+                      className="text-xs font-semibold text-purple-mid hover:text-purple-dark hover:underline"
+                      title="Log time against this task — it lands on your timesheet"
+                    >
+                      + Log time
+                    </button>
+                  )}
+                  <DueDate date={task.dueDate} />
                   <button onClick={() => cycleStatus(task)} title={`Click → ${TASK_STATUS_LABELS[NEXT_STATUS[task.status]]}`} className="hover:opacity-70">
                     <TaskStatusChip status={task.status} />
                   </button>
@@ -417,6 +493,74 @@ export default function TaskBoard({ lockedProjectId }) {
                 <button type="button" onClick={handleDelete} className="btn-ghost text-red-600">Delete</button>
               )}
               <button type="button" onClick={() => setShowForm(false)} className="btn-secondary">Cancel</button>
+            </div>
+          </form>
+        </SlideOver>
+      )}
+
+      {timeTask && timeForm && (
+        <SlideOver title="Log Time" onClose={() => setTimeTask(null)}>
+          <form onSubmit={handleLogTime} className="space-y-4">
+            <div className="p-3 rounded-lg bg-bg-light border border-border">
+              <div className="text-sm font-semibold text-purple-darkest">{timeTask.title}</div>
+              <ClientProject project={timeTask.project} className="mt-0.5" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="form-label">Date</label>
+                <input
+                  type="date" className="form-input" value={timeForm.date}
+                  onChange={(e) => setTimeForm((f) => ({ ...f, date: e.target.value }))} required
+                />
+              </div>
+              <div>
+                <label className="form-label">Hours *</label>
+                {/* step="any": a 0.25 step off a 0.01 floor makes 1.5 an invalid
+                    value and the browser silently blocks submit. Hours are
+                    validated in handleLogTime and on the server instead. */}
+                <input
+                  type="number" step="any" min="0.01" className="form-input" placeholder="e.g. 1.5"
+                  value={timeForm.hours} onChange={(e) => setTimeForm((f) => ({ ...f, hours: e.target.value }))}
+                  autoFocus required
+                />
+              </div>
+            </div>
+            <div>
+              <label className="form-label">Task Type *</label>
+              <select
+                className="form-select" value={timeForm.taskTypeId}
+                onChange={(e) => setTimeForm((f) => ({ ...f, taskTypeId: e.target.value }))} required
+              >
+                <option value="">Select task type…</option>
+                {typesForProject(timeTask.projectId).map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center justify-between">
+              <label className="form-label mb-0">Billable</label>
+              <button
+                type="button"
+                onClick={() => setTimeForm((f) => ({ ...f, isBillable: !f.isBillable }))}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${timeForm.isBillable ? 'bg-olive' : 'bg-gray-200'}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${timeForm.isBillable ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            <div>
+              <label className="form-label">Note</label>
+              <textarea
+                className="form-input" rows={2} value={timeForm.note}
+                onChange={(e) => setTimeForm((f) => ({ ...f, note: e.target.value }))}
+              />
+            </div>
+            {timeError && <p className="text-red-600 text-sm">{timeError}</p>}
+            <p className="text-xs text-text-muted">This posts straight to your timesheet and the project burn.</p>
+            <div className="flex gap-3 pt-2">
+              <button type="submit" disabled={timeSaving} className="btn-primary flex-1">
+                {timeSaving ? 'Logging…' : 'Log Time'}
+              </button>
+              <button type="button" onClick={() => setTimeTask(null)} className="btn-secondary">Cancel</button>
             </div>
           </form>
         </SlideOver>

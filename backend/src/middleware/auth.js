@@ -1,5 +1,8 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const { PrismaClient } = require('@prisma/client');
+
+const prisma = new PrismaClient();
 
 // Machine auth for the Claude automation layer (PRD v2.1 R5).
 // Key lives in NORTHSTAR_API_KEY; if unset, bearer auth is disabled entirely.
@@ -32,4 +35,22 @@ function requireAuth(req, res, next) {
   }
 }
 
-module.exports = { requireAuth };
+// Admin gate for user management. API clients act for the whole team and are
+// trusted with the same reach as an admin (the key is server-side only).
+async function requireAdmin(req, res, next) {
+  if (req.isApiClient) return next();
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { role: true, isActive: true },
+    });
+    if (!user || !user.isActive || user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    next();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { requireAuth, requireAdmin };

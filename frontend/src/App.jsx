@@ -16,11 +16,19 @@ import ProjectOverviewPage from './pages/ProjectOverviewPage';
 import TimelineBoardPage from './pages/TimelineBoardPage';
 import DeliverableDetailPage from './pages/DeliverableDetailPage';
 import TasksPage from './pages/TasksPage';
+import AdminPage from './pages/AdminPage';
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-text-muted">Loading…</div></div>;
   if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
+
+// Cosmetic gate only — /api/users enforces the role server-side.
+function RequireAdmin({ children }) {
+  const { user } = useAuth();
+  if (user?.role !== 'ADMIN') return <Navigate to="/time" replace />;
   return children;
 }
 
@@ -45,6 +53,7 @@ function AppRoutes() {
         <Route path="settings" element={<SettingsPage />} />
         <Route path="settings/clients" element={<ClientsSettingsPage />} />
         <Route path="settings/tasks" element={<TaskTypesSettingsPage />} />
+        <Route path="admin" element={<RequireAdmin><AdminPage /></RequireAdmin>} />
       </Route>
       <Route path="*" element={<Navigate to="/time" replace />} />
     </Routes>

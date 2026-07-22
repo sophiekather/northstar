@@ -1,5 +1,6 @@
 import { format, parseISO } from 'date-fns';
 
+
 export function initials(name) {
   if (!name) return '?';
   return name
@@ -16,6 +17,42 @@ export function fmtDate(d) {
   // local-time instant (which would render the previous day in the US).
   const s = typeof d === 'string' ? d.slice(0, 10) : d.toISOString().slice(0, 10);
   return format(parseISO(s), 'MMM d');
+}
+
+// Compare calendar dates, not instants — a task due today isn't overdue, and
+// dates are stored as UTC midnight (see fmtDate).
+export function isOverdue(d) {
+  if (!d) return false;
+  const due = typeof d === 'string' ? d.slice(0, 10) : d.toISOString().slice(0, 10);
+  return due < format(new Date(), 'yyyy-MM-dd');
+}
+
+// Due date in olive, flipping to red once it's past. Bold either way so the
+// date reads at a glance down a long list.
+export function DueDate({ date, className = '' }) {
+  if (!date) return null;
+  const late = isOverdue(date);
+  return (
+    <span
+      className={`text-xs font-bold ${late ? 'text-red-600' : 'text-olive'} ${className}`}
+      title={late ? 'Past due' : 'Due date'}
+    >
+      {late ? 'Overdue · ' : 'Due '}{fmtDate(date)}
+    </span>
+  );
+}
+
+// Client · Project attribution line — bold olive so you can see which client's
+// work you're looking at without reading the whole card.
+export function ClientProject({ project, suffix, className = '' }) {
+  if (!project) return null;
+  return (
+    <div className={`text-xs font-bold text-olive truncate ${className}`}>
+      {project.client?.name}
+      {project.name ? ` · ${project.name}` : ''}
+      {suffix ? <span className="font-medium text-text-muted"> · {suffix}</span> : null}
+    </div>
+  );
 }
 
 // Avatar square with initials — olive tint for subcontractors, purple for partners

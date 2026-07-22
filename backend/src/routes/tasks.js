@@ -13,6 +13,19 @@ const TASK_INCLUDE = {
   deliverable: { include: { taskType: { select: { id: true, name: true } } } },
 };
 
+// Hours logged against each task, from time entries that carry its taskId.
+// One grouped query instead of a per-task count.
+async function withLoggedHours(tasks) {
+  if (tasks.length === 0) return tasks;
+  const totals = await prisma.timeEntry.groupBy({
+    by: ['taskId'],
+    where: { taskId: { in: tasks.map((t) => t.id) }, status: 'CONFIRMED' },
+    _sum: { hours: true },
+  });
+  const byTask = Object.fromEntries(totals.map((t) => [t.taskId, t._sum.hours || 0]));
+  return tasks.map((t) => ({ ...t, loggedHours: byTask[t.id] || 0 }));
+}
+
 // GET /api/tasks?clientId=&projectId=&assignee=&status=
 // assignee: "user:<userId>" | "sub:<name>" | "subs" (all subcontractors)
 router.get('/', async (req, res) => {
@@ -38,7 +51,7 @@ router.get('/', async (req, res) => {
     include: TASK_INCLUDE,
     orderBy: [{ rank: 'asc' }, { createdAt: 'asc' }],
   });
-  res.json(tasks);
+  res.json(await withLoggedHours(tasks));
 });
 
 router.post('/', async (req, res) => {
@@ -67,7 +80,7 @@ router.post('/', async (req, res) => {
     },
     include: TASK_INCLUDE,
   });
-  res.status(201).json(task);
+  res.status(201).json({ ...task, loggedHours: 0 });
 });
 
 // PATCH /api/tasks/reorder  { ids: [taskId, ...] } — ranks assigned by position
@@ -113,7 +126,9 @@ router.put('/:id', async (req, res) => {
     data,
     include: TASK_INCLUDE,
   });
-  res.json(task);
+  // The board swaps the returned task in place, so it needs the same shape as GET.
+  const [withHours] = await withLoggedHours([task]);
+  res.json(withHours);
 });
 
 router.delete('/:id', async (req, res) => {

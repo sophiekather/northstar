@@ -6,13 +6,16 @@ const prisma = new PrismaClient();
 async function main() {
   const passwordHash = await bcrypt.hash('changeme123', 10);
 
+  // Sophie owns the admin panel; the seed re-asserts it on every run so a
+  // reseeded dev DB never ends up with nobody able to manage users.
   await prisma.user.upsert({
     where: { email: 'sophie@civicnorthconsulting.com' },
-    update: {},
+    update: { role: 'ADMIN' },
     create: {
       name: 'Sophie Kather',
       email: 'sophie@civicnorthconsulting.com',
       passwordHash,
+      role: 'ADMIN',
       weeklyHourTarget: 35,
     },
   });

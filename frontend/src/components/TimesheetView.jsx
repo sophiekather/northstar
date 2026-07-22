@@ -270,9 +270,11 @@ export default function TimesheetView({ weekStart, entries, onRefresh, projects,
           const isSavingCell = saving[ck];
           return (
             <td key={i} className={`px-1 py-2 text-center align-top ${isToday(day) ? 'bg-purple-50/40' : ''}`}>
+              {/* step="any" so odd durations (1.3, 0.83) aren't rejected —
+                  the grid still arrows up and down in whole units. */}
               <input
                 type="number"
-                step="0.25"
+                step="any"
                 min="0"
                 readOnly={readOnly}
                 className={`w-16 text-center border rounded-md py-1.5 text-sm transition-colors outline-none

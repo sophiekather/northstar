@@ -17,6 +17,8 @@ router.post('/login', async (req, res) => {
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
+  if (!user.isActive) return res.status(403).json({ error: 'This account has been deactivated' });
+
   const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, { expiresIn: '30d' });
 
   // The frontend proxies /api to this server (Vercel rewrite in prod, Vite
@@ -29,7 +31,7 @@ router.post('/login', async (req, res) => {
     maxAge: 30 * 24 * 60 * 60 * 1000,
   });
 
-  res.json({ user: { id: user.id, name: user.name, email: user.email } });
+  res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role } });
 });
 
 router.post('/logout', (req, res) => {
@@ -44,9 +46,10 @@ router.post('/logout', (req, res) => {
 router.get('/me', requireAuth, async (req, res) => {
   const user = await prisma.user.findUnique({
     where: { id: req.userId },
-    select: { id: true, name: true, email: true, weeklyHourTarget: true, notificationsEnabled: true },
+    select: { id: true, name: true, email: true, role: true, isActive: true, weeklyHourTarget: true, notificationsEnabled: true },
   });
   if (!user) return res.status(404).json({ error: 'User not found' });
+  if (!user.isActive) return res.status(403).json({ error: 'This account has been deactivated' });
   res.json({ user });
 });
 
