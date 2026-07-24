@@ -84,6 +84,17 @@ export default function TimePage() {
     }
   }, [form.clientId, projects]);
 
+  // Preset the billable toggle from the admin-configured per-user rule for the
+  // selected project. New entries only — edits keep the entry's saved value —
+  // and the toggle stays editable for one-off exceptions.
+  useEffect(() => {
+    if (editEntry || !form.projectId) return;
+    const proj = projects.find((p) => p.id === form.projectId);
+    // No rule = back to the normal default (billable) — otherwise a preset
+    // from a previously selected project would silently stick.
+    if (proj) setForm((f) => ({ ...f, isBillable: proj.myBillableDefault ?? true }));
+  }, [form.projectId, editEntry, projects]);
+
   useEffect(() => {
     if (form.projectId) {
       const proj = projects.find((p) => p.id === form.projectId);

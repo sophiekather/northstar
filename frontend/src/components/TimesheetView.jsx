@@ -59,7 +59,8 @@ function AddRowModal({ projects, taskTypes, onAdd, onClose }) {
     onAdd({
       projectId, taskTypeId,
       projectName: proj?.name, clientName: proj?.client?.name,
-      taskName: task?.name, isBillable: task?.isBillableDefault ?? true,
+      // Per-user project rule wins over the task type's default
+      taskName: task?.name, isBillable: proj?.myBillableDefault ?? task?.isBillableDefault ?? true,
     });
     onClose();
   }

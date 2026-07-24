@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import api from '../lib/api';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { exportPDF } from '../lib/brandedPdf';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (n) => (n || 0).toFixed(1);
@@ -45,57 +44,6 @@ function exportCSV(rows, filename) {
   a.href = URL.createObjectURL(blob);
   a.download = filename;
   a.click();
-}
-
-// ── PDF export ────────────────────────────────────────────────────────────────
-function exportPDF({ title, subtitle, columns, rows, totalsRow }) {
-  const doc = new jsPDF({ orientation: 'landscape' });
-
-  // Brand header
-  doc.setFillColor(74, 82, 64); // olive / #4a5240
-  doc.rect(0, 0, 297, 20, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(13);
-  doc.setFont('helvetica', 'bold');
-  doc.text('NorthStar', 14, 13);
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Civic North Consulting', 50, 13);
-
-  // Title
-  doc.setTextColor(40, 40, 40);
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'bold');
-  doc.text(title, 14, 32);
-  if (subtitle) {
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(120, 120, 120);
-    doc.text(subtitle, 14, 39);
-  }
-
-  autoTable(doc, {
-    startY: subtitle ? 44 : 38,
-    head: [columns],
-    body: rows,
-    foot: totalsRow ? [totalsRow] : [],
-    headStyles: { fillColor: [74, 82, 64], textColor: 255, fontStyle: 'bold', fontSize: 9 },
-    footStyles: { fillColor: [240, 240, 235], textColor: 40, fontStyle: 'bold', fontSize: 9 },
-    bodyStyles: { fontSize: 9 },
-    alternateRowStyles: { fillColor: [250, 250, 248] },
-    styles: { cellPadding: 3 },
-  });
-
-  // Footer
-  const pageCount = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    doc.setFontSize(8);
-    doc.setTextColor(160, 160, 160);
-    doc.text(`Generated ${new Date().toLocaleDateString()} · Page ${i} of ${pageCount}`, 14, doc.internal.pageSize.height - 8);
-  }
-
-  doc.save(`${title.replace(/\s+/g, '-').toLowerCase()}.pdf`);
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -396,6 +344,7 @@ export default function ReportsPage() {
             <button onClick={() => exportPDF({
               title: 'Time Summary',
               subtitle,
+              preparedFor: clientLabel,
               columns: [groupBy === 'client' ? 'Client' : groupBy === 'project' ? 'Project' : 'Person', 'Total Hours', 'Billable', 'Non-Billable', 'Amount'],
               rows: timeSummary.rows.map(r => [r.label, fmt(r.totalHours)+'h', fmt(r.billableHours)+'h', fmt(r.nonBillableHours)+'h', fmtMoney(r.amount)]),
               totalsRow: ['TOTAL', fmt(timeSummary.totals.totalHours)+'h', fmt(timeSummary.totals.billableHours)+'h', fmt(timeSummary.totals.nonBillableHours)+'h', fmtMoney(timeSummary.totals.amount)],
@@ -451,6 +400,7 @@ export default function ReportsPage() {
                   <th className="text-right px-4 py-2 font-semibold text-text-muted text-xs">Total</th>
                   <th className="text-right px-4 py-2 font-semibold text-text-muted text-xs">Billable</th>
                   <th className="text-right px-4 py-2 font-semibold text-text-muted text-xs">Non-Bill.</th>
+                  <th className="text-right px-4 py-2 font-semibold text-text-muted text-xs">Amount</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -461,6 +411,7 @@ export default function ReportsPage() {
                       <td className="px-4 py-3 text-right tabular-nums">{fmt(t.hours)}h</td>
                       <td className="px-4 py-3 text-right text-olive tabular-nums">{fmt(t.billable)}h</td>
                       <td className="px-4 py-3 text-right text-text-muted tabular-nums">{fmt(t.hours - t.billable)}h</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{fmtMoney(t.amount)}</td>
                     </tr>
                     {showBillableDetail && t.subRows?.map(sub => (
                       <tr key={sub.name} className="hover:bg-bg-light/30 bg-bg-light/20">
@@ -468,6 +419,7 @@ export default function ReportsPage() {
                         <td className="px-4 py-2 text-right text-xs tabular-nums">{fmt(sub.hours)}h</td>
                         <td className="px-4 py-2 text-right text-xs text-olive tabular-nums">{fmt(sub.billable)}h</td>
                         <td className="px-4 py-2 text-right text-xs text-text-muted tabular-nums">{fmt(sub.hours - sub.billable)}h</td>
+                        <td className="px-4 py-2 text-right text-xs tabular-nums">{fmtMoney(sub.amount)}</td>
                       </tr>
                     ))}
                   </Fragment>
@@ -477,13 +429,15 @@ export default function ReportsPage() {
           </div>
 
           <div className="flex gap-2">
-            <button onClick={() => exportCSV((billable.groups || billable.byTask).map(t => ({ [billableGroupBy]: t.name, total_hours: fmt(t.hours), billable_hours: fmt(t.billable), non_billable_hours: fmt(t.hours - t.billable) })), `billable-breakdown-${startDate}.csv`)}
+            <button onClick={() => exportCSV((billable.groups || billable.byTask).map(t => ({ [billableGroupBy]: t.name, total_hours: fmt(t.hours), billable_hours: fmt(t.billable), non_billable_hours: fmt(t.hours - t.billable), amount: fmtMoney(t.amount) })), `billable-breakdown-${startDate}.csv`)}
               className="btn-secondary text-sm">Export CSV</button>
             <button onClick={() => exportPDF({
               title: 'Billable Breakdown',
               subtitle: `${subtitle} · ${billable.billablePct}% billable`,
-              columns: [billableGroupLabel, 'Total Hours', 'Billable', 'Non-Billable'],
-              rows: (billable.groups || billable.byTask).map(t => [t.name, fmt(t.hours)+'h', fmt(t.billable)+'h', fmt(t.hours - t.billable)+'h']),
+              preparedFor: clientLabel,
+              columns: [billableGroupLabel, 'Total Hours', 'Billable', 'Non-Billable', 'Amount'],
+              rows: (billable.groups || billable.byTask).map(t => [t.name, fmt(t.hours)+'h', fmt(t.billable)+'h', fmt(t.hours - t.billable)+'h', fmtMoney(t.amount)]),
+              totalsRow: ['TOTAL', fmt(billable.totalHours)+'h', fmt(billable.billableHours)+'h', fmt(billable.nonBillableHours)+'h', fmtMoney(billable.billableAmount)],
             })} className="btn-secondary text-sm">Export PDF</button>
           </div>
         </div>
@@ -529,7 +483,8 @@ export default function ReportsPage() {
                     className="btn-secondary text-sm">Export CSV</button>
                   <button onClick={() => exportPDF({
                     title: 'Retainer Burn Report',
-                    subtitle: `Month: ${retainerMonth}`,
+                    subtitle: new Date(`${retainerMonth}-15T12:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+                    preparedFor: 'Retainer Clients',
                     columns: ['Client', 'Project', 'Budget (hrs)', 'Used (hrs)', 'Remaining', '% Used', 'Over Budget'],
                     rows: retainer.retainers.map(r => [r.clientName, r.projectName, r.monthlyHours, fmt(r.hoursUsed), fmt(r.hoursRemaining), r.pct+'%', r.overBudget ? 'YES' : 'No']),
                   })} className="btn-secondary text-sm">Export PDF</button>
@@ -617,6 +572,7 @@ export default function ReportsPage() {
                 <button onClick={() => exportPDF({
                   title: 'Custom Time Report',
                   subtitle,
+                  preparedFor: clientLabel,
                   columns: ['Date','Person','Client','Project','Task','Hours','Billable','Amount'],
                   rows: entries.map(e => [new Date(e.date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),e.person,e.client,e.project,e.task,fmt(e.hours)+'h',e.billable?'Yes':'No',fmtMoney(e.amount)]),
                   totalsRow: ['','','','','TOTAL', fmt(entries.reduce((s,e)=>s+e.hours,0))+'h','',fmtMoney(entries.reduce((s,e)=>s+e.amount,0))],

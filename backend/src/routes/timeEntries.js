@@ -48,6 +48,15 @@ router.post('/', async (req, res) => {
   }
   if (hours <= 0) return res.status(400).json({ error: 'Hours must be greater than 0' });
 
+  // No explicit flag → the user's admin-configured preset for this project, then billable
+  let billable = isBillable;
+  if (billable === undefined && req.userId) {
+    const rule = await prisma.userProjectBillableDefault.findUnique({
+      where: { userId_projectId: { userId: req.userId, projectId } },
+    });
+    billable = rule?.isBillable;
+  }
+
   const entry = await prisma.timeEntry.create({
     data: {
       userId: req.userId,
@@ -57,7 +66,7 @@ router.post('/', async (req, res) => {
       date: parseDate(date),
       hours,
       hourlyRate: hourlyRate || 0,
-      isBillable: isBillable ?? true,
+      isBillable: billable ?? true,
       note,
       noteClientVisible: noteClientVisible ?? false,
     },

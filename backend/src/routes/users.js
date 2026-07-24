@@ -58,7 +58,7 @@ router.post('/', async (req, res) => {
 });
 
 router.put('/:id', async (req, res) => {
-  const { name, email, role, isActive, weeklyHourTarget } = req.body;
+  const { name, email, role, isActive, weeklyHourTarget, notificationsEnabled } = req.body;
   const target = await prisma.user.findUnique({ where: { id: req.params.id } });
   if (!target) return res.status(404).json({ error: 'User not found' });
 
@@ -75,6 +75,7 @@ router.put('/:id', async (req, res) => {
   if (role !== undefined) data.role = role === 'ADMIN' ? 'ADMIN' : 'MEMBER';
   if (isActive !== undefined) data.isActive = !!isActive;
   if (weeklyHourTarget !== undefined) data.weeklyHourTarget = parseFloat(weeklyHourTarget);
+  if (notificationsEnabled !== undefined) data.notificationsEnabled = !!notificationsEnabled;
 
   try {
     const user = await prisma.user.update({ where: { id: req.params.id }, data, select: USER_SELECT });
@@ -83,6 +84,36 @@ router.put('/:id', async (req, res) => {
     if (err.code === 'P2002') return res.status(409).json({ error: 'That email is already in use' });
     throw err;
   }
+});
+
+// GET /api/users/:id/billable-rules — per-project billable presets for a user.
+// No row for a project = default (billable). Presets only; entries stay editable.
+router.get('/:id/billable-rules', async (req, res) => {
+  const rules = await prisma.userProjectBillableDefault.findMany({
+    where: { userId: req.params.id },
+    select: { projectId: true, isBillable: true },
+  });
+  res.json(rules);
+});
+
+// PUT /api/users/:id/billable-rules — replaces the user's full rule set.
+// Body: { rules: [{ projectId, isBillable }] }. Projects omitted fall back to default.
+router.put('/:id/billable-rules', async (req, res) => {
+  const { rules } = req.body;
+  if (!Array.isArray(rules)) return res.status(400).json({ error: 'rules array required' });
+
+  const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+  if (!target) return res.status(404).json({ error: 'User not found' });
+
+  const clean = rules
+    .filter((r) => r && r.projectId && typeof r.isBillable === 'boolean')
+    .map((r) => ({ userId: req.params.id, projectId: r.projectId, isBillable: r.isBillable }));
+
+  await prisma.$transaction([
+    prisma.userProjectBillableDefault.deleteMany({ where: { userId: req.params.id } }),
+    ...(clean.length ? [prisma.userProjectBillableDefault.createMany({ data: clean })] : []),
+  ]);
+  res.json(clean.map(({ projectId, isBillable }) => ({ projectId, isBillable })));
 });
 
 // POST /api/users/:id/reset-password — returns a new temp password to hand over

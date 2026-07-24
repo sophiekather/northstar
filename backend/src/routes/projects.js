@@ -37,9 +37,16 @@ router.get('/', async (req, res) => {
     hoursMap[h.projectId] = h._sum.hours || 0;
   }
 
+  // Current user's admin-configured billable presets (no rule = billable)
+  const billableRules = req.userId
+    ? await prisma.userProjectBillableDefault.findMany({ where: { userId: req.userId } })
+    : [];
+  const billableMap = Object.fromEntries(billableRules.map((r) => [r.projectId, r.isBillable]));
+
   const result = projects.map((p) => ({
     ...p,
     hoursSpent: hoursMap[p.id] || 0,
+    myBillableDefault: billableMap[p.id] ?? null, // null = no rule, fall back to task-type/true
   }));
 
   res.json(result);

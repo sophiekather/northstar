@@ -3,7 +3,7 @@ import api from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
 import { Avatar, SlideOver } from '../lib/ui';
 
-const EMPTY_FORM = { name: '', email: '', role: 'MEMBER', weeklyHourTarget: 35 };
+const EMPTY_FORM = { name: '', email: '', role: 'MEMBER', weeklyHourTarget: 35, notificationsEnabled: true };
 
 function RoleChip({ role }) {
   return role === 'ADMIN' ? (
@@ -42,9 +42,85 @@ function PasswordHandoff({ user, password, onDone }) {
   );
 }
 
+// Per-project billable presets for one user. "Default" = no rule (new entries
+// start billable, or follow the task type's default in the timesheet view).
+// Rules only pre-set the toggle — every entry stays editable.
+function BillableRulesEditor({ projects, rules, onChange }) {
+  const active = projects.filter((p) => p.isActive);
+
+  // Group by client for a scannable list
+  const byClient = {};
+  for (const p of active) {
+    const key = p.client?.name || 'No client';
+    (byClient[key] = byClient[key] || []).push(p);
+  }
+
+  function setRule(projectId, value) {
+    const next = { ...rules };
+    if (value === null) delete next[projectId];
+    else next[projectId] = value;
+    onChange(next);
+  }
+
+  const OPTIONS = [
+    { value: true,  label: 'Billable' },
+    { value: false, label: 'Non-bill.' },
+    { value: null,  label: 'Default' },
+  ];
+
+  return (
+    <div>
+      <label className="form-label">Billable presets by project</label>
+      <p className="text-xs text-text-muted mb-2">
+        New time entries this user logs start with this setting. They can still flip
+        any single entry. "Default" leaves the normal behavior (billable).
+      </p>
+      <div className="border border-border rounded-lg divide-y divide-border max-h-72 overflow-y-auto">
+        {Object.entries(byClient).map(([clientName, ps]) => (
+          <div key={clientName} className="px-3 py-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-text-muted mb-1.5">
+              {clientName}
+            </div>
+            <div className="space-y-1.5">
+              {ps.map((p) => {
+                const current = rules[p.id] ?? null;
+                return (
+                  <div key={p.id} className="flex items-center justify-between gap-2">
+                    <span className="text-sm text-text-body truncate">{p.name}</span>
+                    <div className="flex rounded-md bg-bg-light p-0.5 shrink-0">
+                      {OPTIONS.map((o) => (
+                        <button
+                          key={String(o.value)}
+                          type="button"
+                          onClick={() => setRule(p.id, o.value)}
+                          className={`px-2 py-0.5 text-[11px] rounded transition-colors ${
+                            current === o.value
+                              ? 'bg-white shadow-sm font-semibold text-purple-dark'
+                              : 'text-text-muted hover:text-text-body'
+                          }`}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        {active.length === 0 && (
+          <div className="px-3 py-4 text-sm text-text-muted">No active projects.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const { user: me } = useAuth();
   const [users, setUsers] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [handoff, setHandoff] = useState(null); // { user, password }
@@ -52,6 +128,8 @@ export default function AdminPage() {
   const [showForm, setShowForm] = useState(false);
   const [editUser, setEditUser] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  // { [projectId]: true | false } — projects absent from the map use the default
+  const [billableRules, setBillableRules] = useState({});
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -68,20 +146,33 @@ export default function AdminPage() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    api.get('/projects').then((r) => setProjects(r.data)).catch(() => {});
+  }, []);
 
   function openAdd() {
     setEditUser(null);
     setForm(EMPTY_FORM);
+    setBillableRules({});
     setFormError('');
     setShowForm(true);
   }
 
-  function openEdit(u) {
+  async function openEdit(u) {
     setEditUser(u);
-    setForm({ name: u.name, email: u.email, role: u.role, weeklyHourTarget: u.weeklyHourTarget });
+    setForm({
+      name: u.name, email: u.email, role: u.role,
+      weeklyHourTarget: u.weeklyHourTarget,
+      notificationsEnabled: u.notificationsEnabled ?? true,
+    });
+    setBillableRules({});
     setFormError('');
     setShowForm(true);
+    try {
+      const r = await api.get(`/users/${u.id}/billable-rules`);
+      setBillableRules(Object.fromEntries(r.data.map((x) => [x.projectId, x.isBillable])));
+    } catch { /* rules panel just starts empty */ }
   }
 
   async function handleSave(e) {
@@ -91,6 +182,9 @@ export default function AdminPage() {
     try {
       if (editUser) {
         const r = await api.put(`/users/${editUser.id}`, form);
+        await api.put(`/users/${editUser.id}/billable-rules`, {
+          rules: Object.entries(billableRules).map(([projectId, isBillable]) => ({ projectId, isBillable })),
+        });
         setUsers((us) => us.map((u) => (u.id === editUser.id ? { ...u, ...r.data } : u)));
       } else {
         const r = await api.post('/users', form);
@@ -244,6 +338,26 @@ export default function AdminPage() {
                 onChange={(e) => setForm((f) => ({ ...f, weeklyHourTarget: e.target.value }))}
               />
             </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="form-label mb-0">Email notifications</label>
+                <p className="text-xs text-text-muted">Daily task digest and time-logging nudge.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, notificationsEnabled: !f.notificationsEnabled }))}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.notificationsEnabled ? 'bg-olive' : 'bg-gray-200'}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.notificationsEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            {editUser && (
+              <BillableRulesEditor
+                projects={projects}
+                rules={billableRules}
+                onChange={setBillableRules}
+              />
+            )}
             {!editUser && (
               <p className="text-xs text-text-muted">
                 A temporary password is generated when you save — you'll see it once, to pass on.
