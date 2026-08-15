@@ -6,7 +6,8 @@
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
     "deploy:schema": "prisma db push --skip-generate && node prisma/ensure-internal.js",
-    "seed": "node prisma/seed.js"
+    "seed": "node prisma/seed.js",
+    "test": "node --test \"test/**/*.test.js\""
   },
   "dependencies": {
     "@prisma/client": "^5.14.0",

@@ -63,6 +63,32 @@ App runs at `http://localhost:5173`. API at `http://localhost:3001`.
 | `JWT_SECRET` | Secret key for JWT signing | — |
 | `PORT` | Backend port | `3001` |
 | `FRONTEND_URL` | Frontend origin for CORS | `http://localhost:5173` |
+| `NORTHSTAR_API_KEY` | Bearer key for machine access to `/api/*` (unset disables it) | — |
+| `MCP_TOKEN` | Token for the `/api/mcp` connector (unset keeps it closed) | — |
+
+## Claude MCP Connector
+
+`/api/mcp` exposes the app to Claude as a custom connector — Streamable HTTP,
+JSON responses, protocol `2025-06-18`. It authenticates on its own with
+`MCP_TOKEN`, so it is mounted ahead of the normal route auth.
+
+Set `MCP_TOKEN` to a long random string (Railway → Variables), then paste this
+into Claude's custom connector settings:
+
+```
+https://northstar-production-8bd8.up.railway.app/api/mcp/<MCP_TOKEN>
+```
+
+The token can also be sent as `Authorization: Bearer <MCP_TOKEN>` against
+`/api/mcp` if the client supports headers. Confirm it is live in a browser:
+
+```
+https://northstar-production-8bd8.up.railway.app/api/mcp/<MCP_TOKEN>/health
+```
+
+Tools are defined in `backend/src/services/mcpTools.js` and talk to Prisma
+directly; `backend/src/routes/mcp.js` is the transport. Run `npm test` in
+`backend/` to exercise both (needs a reachable `DATABASE_URL`).
 
 ## Default Accounts
 

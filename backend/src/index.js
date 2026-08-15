@@ -17,6 +17,7 @@ const settingsRoutes = require('./routes/settings');
 const reportsRoutes = require('./routes/reports');
 const taskRoutes = require('./routes/tasks');
 const userRoutes = require('./routes/users');
+const mcpRoutes = require('./routes/mcp');
 
 const app = express();
 
@@ -28,6 +29,11 @@ app.use(cors({
   ],
   credentials: true,
 }));
+// Ahead of express.json() and the route-level auth: the MCP endpoint carries its
+// own MCP_TOKEN check, and it parses its own body so a malformed payload comes
+// back as a JSON-RPC parse error instead of the default HTML 400.
+app.use('/api/mcp', mcpRoutes);
+
 app.use(express.json());
 app.use(cookieParser());
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
