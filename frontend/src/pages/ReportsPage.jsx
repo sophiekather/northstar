@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import api from '../lib/api';
-import { exportPDF } from '../lib/brandedPdf';
+import { exportPDF, withNoteRows } from '../lib/brandedPdf';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (n) => (n || 0).toFixed(1);
@@ -75,6 +75,8 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(false);
   const [showTimeSummaryDetail, setShowTimeSummaryDetail] = useState(true);
   const [showBillableDetail, setShowBillableDetail] = useState(true);
+  // Which notes get printed on the client-facing PDFs
+  const [pdfNotes, setPdfNotes] = useState('client'); // 'client' | 'all' | 'none'
 
   useEffect(() => {
     api.get('/reports/clients').then(r => setClients(r.data));
@@ -154,6 +156,31 @@ export default function ReportsPage() {
         return acc;
       }, {})).sort((a, b) => b.hours - a.hours)
     : null;
+
+  // Notes control shown beside the PDF button on the note-bearing reports
+  const notesControl = (
+    <div className="flex items-center gap-2 ml-auto text-xs text-text-muted">
+      <span className="font-semibold uppercase tracking-wide">Notes on PDF</span>
+      <div className="inline-flex rounded-md border border-border overflow-hidden">
+        {[
+          ['client', 'Client-facing'],
+          ['all', 'All notes'],
+          ['none', 'None'],
+        ].map(([v, label]) => (
+          <button key={v} onClick={() => setPdfNotes(v)}
+            className={`px-2.5 py-1 font-semibold transition-colors ${pdfNotes === v ? 'bg-olive text-white' : 'bg-white text-text-muted hover:bg-bg-light'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  const notesFootnote = pdfNotes === 'all'
+    ? 'Includes internal notes — review before sending to a client.'
+    : pdfNotes === 'client'
+      ? 'Notes shown are the ones marked client-facing in NorthStar.'
+      : null;
 
   return (
     <div className="max-w-5xl">
@@ -487,7 +514,20 @@ export default function ReportsPage() {
                     preparedFor: 'Retainer Clients',
                     columns: ['Client', 'Project', 'Budget (hrs)', 'Used (hrs)', 'Remaining', '% Used', 'Over Budget'],
                     rows: retainer.retainers.map(r => [r.clientName, r.projectName, r.monthlyHours, fmt(r.hoursUsed), fmt(r.hoursRemaining), r.pct+'%', r.overBudget ? 'YES' : 'No']),
+                    // Under the summary: the individual logs behind each retainer
+                    sections: retainer.retainers.map(r => ({
+                      title: `${r.clientName} · ${r.projectName}`,
+                      meta: `${fmt(r.hoursUsed)}h of ${r.monthlyHours}h · ${r.overBudget ? `${fmt(r.overBy)}h over` : `${fmt(r.hoursRemaining)}h remaining`}`,
+                      columns: ['Date', 'Person', 'Task', 'Hours'],
+                      rows: withNoteRows((r.entries || []).map(e => ({
+                        row: [fmtDate(e.date), e.person, e.task, fmt(e.hours) + 'h'],
+                        note: e.note,
+                        noteClientVisible: e.noteClientVisible,
+                      })), 4, pdfNotes),
+                    })),
+                    note: notesFootnote,
                   })} className="btn-secondary text-sm">Export PDF</button>
+                  {notesControl}
                 </div>
               </div>
           )}
@@ -574,9 +614,16 @@ export default function ReportsPage() {
                   subtitle,
                   preparedFor: clientLabel,
                   columns: ['Date','Person','Client','Project','Task','Hours','Billable','Amount'],
-                  rows: entries.map(e => [new Date(e.date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),e.person,e.client,e.project,e.task,fmt(e.hours)+'h',e.billable?'Yes':'No',fmtMoney(e.amount)]),
+                  detailBody: true, // the whole table is individual logs
+                  rows: withNoteRows(entries.map(e => ({
+                    row: [new Date(e.date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}),e.person,e.client,e.project,e.task,fmt(e.hours)+'h',e.billable?'Yes':'No',fmtMoney(e.amount)],
+                    note: e.note,
+                    noteClientVisible: e.noteClientVisible,
+                  })), 8, pdfNotes),
                   totalsRow: ['','','','','TOTAL', fmt(entries.reduce((s,e)=>s+e.hours,0))+'h','',fmtMoney(entries.reduce((s,e)=>s+e.amount,0))],
+                  note: notesFootnote,
                 })} className="btn-secondary text-sm">Export PDF</button>
+                {notesControl}
               </div>
             </>
           )}

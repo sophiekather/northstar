@@ -1,5 +1,10 @@
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import * as jspdfNs from 'jspdf';
+import * as autoTableNs from 'jspdf-autotable';
+
+// Namespace imports so the same module works under the bundler and under plain
+// node (scripts/gen-pdf-samples.mjs renders review samples with this builder).
+const jsPDF = jspdfNs.jsPDF || jspdfNs.default;
+const autoTable = autoTableNs.default?.default || autoTableNs.default || autoTableNs.autoTable;
 
 // ── Civic North brand (per brand guidelines) ─────────────────────────────────
 const CN = {
@@ -12,6 +17,13 @@ const CN = {
   inkMuted:    [120, 116, 130],
   rowTint:     [246, 243, 250], // light purple wash for alternate rows
   totalTint:   [240, 243, 230], // light olive wash for totals row
+  // Detail layer: the individual logs that sit under a summary line. One green
+  // ramp, darkest at the top — section header, column header, entry, note.
+  greenDark:   [ 58,  79,  22], // section header bar
+  greenRow:    [244, 249, 235], // entry rows
+  noteTint:    [230, 240, 214], // client-facing note, a shade deeper than its entry
+  noteInk:     [ 78, 104,  30], // readable green on noteTint
+  internalTint:[244, 244, 241], // neutral wash — internal notes stay out of the green
 };
 
 // Pastel honeycomb tones sampled from the brand banner
@@ -79,8 +91,10 @@ async function registerFonts(doc) {
 // Right-align columns whose every value reads as a number/amount/percentage
 function numericColumns(columns, rows) {
   const numeric = {};
+  // Note rows are single spanning cells — they say nothing about column type
+  const dataRows = rows.filter((r) => r.length === columns.length && r.every((c) => typeof c !== 'object'));
   for (let c = 1; c < columns.length; c++) {
-    const allNumeric = rows.length > 0 && rows.every((r) => {
+    const allNumeric = dataRows.length > 0 && dataRows.every((r) => {
       const v = String(r[c] ?? '').trim();
       return v === '' || /^[-$0-9.,%h\s]+$/.test(v);
     });
@@ -122,14 +136,41 @@ function drawHeaderHexBand(doc) {
   }
 }
 
-// Client-facing, Civic North branded report PDF.
-// { title, subtitle, columns, rows, totalsRow?, preparedFor? }
-export async function exportPDF({ title, subtitle, columns, rows, totalsRow, preparedFor }) {
-  const doc = new jsPDF({ orientation: 'landscape', format: 'a4' });
-  await registerFonts(doc);
-  const logo = await loadLogo();
+// ── Detail rows ──────────────────────────────────────────────────────────────
+// A note reads as a sub-row of the entry above it: one cell spanning the table,
+// indented, pale green for client-facing notes and neutral gray for internal
+// ones. Pass the result inside a `rows` array, right after its entry row.
+export function noteRow(text, span, { internal = false } = {}) {
+  return [{
+    content: internal ? `Internal · ${text}` : text,
+    colSpan: span,
+    styles: {
+      fillColor: internal ? CN.internalTint : CN.noteTint,
+      textColor: internal ? CN.inkMuted : CN.noteInk,
+      fontStyle: 'normal',
+      fontSize: 7.6,
+      cellPadding: { top: 1.2, right: 3, bottom: 2.4, left: 9 }, // left indent = "belongs to the row above"
+      lineWidth: 0,
+    },
+  }];
+}
 
-  // ── Header: logo on clean white, no band ──
+// Expand entries into a row per entry, each followed by its note row.
+// notes: 'client' (client-visible only) | 'all' | 'none'
+export function withNoteRows(items, span, notes = 'client') {
+  const out = [];
+  for (const { row, note, noteClientVisible } of items) {
+    out.push(row);
+    if (notes === 'none' || !note || !String(note).trim()) continue;
+    const internal = !noteClientVisible;
+    if (internal && notes !== 'all') continue;
+    out.push(noteRow(String(note).trim(), span, { internal }));
+  }
+  return out;
+}
+
+// ── Header / footer chrome ───────────────────────────────────────────────────
+function drawMainHeader(doc, { title, subtitle, logo }) {
   drawHeaderHexBand(doc);
 
   if (logo) {
@@ -162,6 +203,60 @@ export async function exportPDF({ title, subtitle, columns, rows, totalsRow, pre
   // Olive accent rule under the header
   doc.setFillColor(...CN.accentOlive);
   doc.rect(0, HEADER_H, PAGE_W, 1.6, 'F');
+}
+
+// Slim repeat of the header on continuation pages — detail rows make these
+// reports run long, and a bare page top reads as a different document.
+function drawRunningHeader(doc, { title, logo }) {
+  if (logo) {
+    const h = 11;
+    const w = (logo.w / logo.h) * h;
+    doc.addImage(logo.dataUrl, logo.format || 'PNG', MARGIN, 8, w, h);
+  } else {
+    doc.setTextColor(...CN.primaryDark);
+    doc.setFont('Poppins', 'bold');
+    doc.setFontSize(10);
+    doc.text('CIVIC NORTH', MARGIN, 16);
+  }
+  doc.setTextColor(...CN.inkMuted);
+  doc.setFont('Poppins', 'semibold');
+  doc.setFontSize(8.5);
+  doc.text(`${title} (continued)`, PAGE_W - MARGIN, 16, { align: 'right' });
+  doc.setFillColor(...CN.accentOlive);
+  doc.rect(0, 22, PAGE_W, 0.8, 'F');
+}
+
+function drawFooters(doc) {
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(...CN.primaryDark);
+    doc.setLineWidth(0.4);
+    doc.line(MARGIN, PAGE_H - 14, PAGE_W - MARGIN, PAGE_H - 14);
+    doc.setFont('Poppins', 'semibold');
+    doc.setFontSize(8);
+    doc.setTextColor(...CN.primaryDark);
+    doc.text('Civic North Consulting', MARGIN, PAGE_H - 9);
+    doc.setTextColor(...CN.secondary);
+    doc.textWithLink(WEBSITE, PAGE_W / 2, PAGE_H - 9, { url: WEBSITE_URL, align: 'center' });
+    doc.setFont('Poppins', 'normal');
+    doc.setTextColor(...CN.inkMuted);
+    doc.text(`Page ${i} of ${pageCount}`, PAGE_W - MARGIN, PAGE_H - 9, { align: 'right' });
+  }
+}
+
+// ── Document builder ─────────────────────────────────────────────────────────
+// Shared by the browser export and the sample generator.
+// { title, subtitle, columns, rows, totalsRow?, preparedFor?, sections?, note? }
+//   sections: [{ title, meta?, columns, rows }] — detail blocks under the
+//   summary table, on the green ramp so the hierarchy reads at a glance.
+//   detailBody — the main table IS the individual logs (the custom report), so
+//   its rows take the same green treatment as a detail section.
+export async function buildReportDoc({ title, subtitle, columns, rows, totalsRow, preparedFor, sections, note, detailBody }, logo) {
+  const doc = new jsPDF({ orientation: 'landscape', format: 'a4' });
+  await registerFonts(doc);
+
+  drawMainHeader(doc, { title, subtitle, logo });
 
   // ── Meta block ──
   const metaY = HEADER_H + 12;
@@ -182,18 +277,30 @@ export async function exportPDF({ title, subtitle, columns, rows, totalsRow, pre
     doc.text(value, x, metaY + 6);
   });
 
-  // ── Table ──
+  const common = {
+    margin: { left: MARGIN, right: MARGIN, top: 30, bottom: 26 },
+    styles: { font: 'Poppins', fontStyle: 'normal', fontSize: 8.5, cellPadding: 3, textColor: CN.ink },
+    alternateRowStyles: { fillColor: CN.rowTint },
+    rowPageBreak: 'avoid', // never cut a note in half across a page break
+    didDrawPage: () => {
+      if (doc.internal.getCurrentPageInfo().pageNumber > 1) drawRunningHeader(doc, { title, logo });
+    },
+  };
+
+  // ── Summary table ──
   const numCols = numericColumns(columns, rows);
   autoTable(doc, {
+    ...common,
     startY: metaY + 14,
-    margin: { left: MARGIN, right: MARGIN, top: 40, bottom: 26 },
+    ...(detailBody ? {
+      styles: { ...common.styles, fillColor: CN.greenRow },
+      alternateRowStyles: { fillColor: CN.greenRow },
+    } : {}),
     head: [columns],
     body: rows,
     foot: totalsRow ? [totalsRow] : [],
-    styles: { font: 'Poppins', fontStyle: 'normal', fontSize: 8.5, cellPadding: 3, textColor: CN.ink },
     headStyles: { fillColor: CN.primary, textColor: 255, font: 'Poppins', fontStyle: 'bold', fontSize: 8.5 },
     footStyles: { fillColor: CN.totalTint, textColor: CN.primaryDark, font: 'Poppins', fontStyle: 'bold', fontSize: 8.5 },
-    alternateRowStyles: { fillColor: CN.rowTint },
     columnStyles: numCols,
     // columnStyles only reach body cells — align head/foot down the same edge
     didParseCell: (data) => {
@@ -202,23 +309,59 @@ export async function exportPDF({ title, subtitle, columns, rows, totalsRow, pre
     showFoot: 'lastPage',
   });
 
-  // ── Footer (every page): rule, name · website link · page number ──
-  const pageCount = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    doc.setDrawColor(...CN.primaryDark);
-    doc.setLineWidth(0.4);
-    doc.line(MARGIN, PAGE_H - 14, PAGE_W - MARGIN, PAGE_H - 14);
-    doc.setFont('Poppins', 'semibold');
-    doc.setFontSize(8);
-    doc.setTextColor(...CN.primaryDark);
-    doc.text('Civic North Consulting', MARGIN, PAGE_H - 9);
-    doc.setTextColor(...CN.secondary);
-    doc.textWithLink(WEBSITE, PAGE_W / 2, PAGE_H - 9, { url: WEBSITE_URL, align: 'center' });
-    doc.setFont('Poppins', 'normal');
-    doc.setTextColor(...CN.inkMuted);
-    doc.text(`Page ${i} of ${pageCount}`, PAGE_W - MARGIN, PAGE_H - 9, { align: 'right' });
+  // ── Detail sections ──
+  for (const s of (sections || [])) {
+    const sNum = numericColumns(s.columns, s.rows);
+    const n = s.columns.length;
+    const titleRow = n > 2
+      ? [{ content: s.title, colSpan: n - 2, styles: { halign: 'left' } },
+         { content: s.meta || '', colSpan: 2, styles: { halign: 'right' } }]
+      : [{ content: s.title, colSpan: n, styles: { halign: 'left' } }];
+    autoTable(doc, {
+      ...common,
+      // Detail rows run long — a touch tighter than the summary above them
+      styles: { ...common.styles, fontSize: 8, cellPadding: 2.4, fillColor: CN.greenRow },
+      alternateRowStyles: { fillColor: CN.greenRow },
+      startY: doc.lastAutoTable.finalY + 9,
+      head: [titleRow, s.columns],
+      body: s.rows,
+      headStyles: { font: 'Poppins', fontStyle: 'bold', fontSize: 8 },
+      columnStyles: sNum,
+      didParseCell: (data) => {
+        if (data.section !== 'head') return;
+        if (data.row.index === 0) {
+          // Top of the ramp: the summary line this detail belongs to
+          data.cell.styles.fillColor = CN.greenDark;
+          data.cell.styles.textColor = 255;
+          data.cell.styles.fontSize = 9;
+        } else {
+          // Column labels, one step lighter
+          data.cell.styles.fillColor = CN.accentOlive;
+          data.cell.styles.textColor = 255;
+          if (sNum[data.column.index]) data.cell.styles.halign = 'right';
+        }
+      },
+    });
   }
 
-  doc.save(`${title.replace(/\s+/g, '-').toLowerCase()}.pdf`);
+  // ── Closing note ──
+  if (note) {
+    const y = doc.lastAutoTable.finalY + 8;
+    if (y < PAGE_H - 20) {
+      doc.setFont('Poppins', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(...CN.inkMuted);
+      doc.text(note, MARGIN, y);
+    }
+  }
+
+  drawFooters(doc);
+  return doc;
+}
+
+// Client-facing, Civic North branded report PDF.
+export async function exportPDF(opts) {
+  const logo = await loadLogo();
+  const doc = await buildReportDoc(opts, logo);
+  doc.save(`${opts.title.replace(/\s+/g, '-').toLowerCase()}.pdf`);
 }

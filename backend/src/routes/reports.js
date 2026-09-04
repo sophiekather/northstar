@@ -181,6 +181,11 @@ router.get('/retainer-burn', async (req, res) => {
       retainerConfig: true,
       timeEntries: {
         where: { date: { gte: start, lte: end }, status: 'CONFIRMED' },
+        include: {
+          user: { select: { name: true } },
+          taskType: { select: { name: true } },
+        },
+        orderBy: { date: 'asc' },
       },
     },
   });
@@ -199,6 +204,16 @@ router.get('/retainer-burn', async (req, res) => {
       pct: Math.min(pct, 100),
       overBudget: hoursUsed > budget,
       overBy: hoursUsed > budget ? hoursUsed - budget : 0,
+      // Individual logs behind the summary — client-facing report detail
+      entries: p.timeEntries.map(e => ({
+        date: e.date,
+        person: e.user.name,
+        task: e.taskType.name,
+        hours: e.hours,
+        billable: e.isBillable,
+        note: e.note || '',
+        noteClientVisible: e.noteClientVisible,
+      })),
     };
   });
 
@@ -240,6 +255,7 @@ router.get('/entries', async (req, res) => {
     rate: e.hourlyRate,
     amount: e.isBillable ? e.hours * e.hourlyRate : 0,
     note: e.note || '',
+    noteClientVisible: e.noteClientVisible,
   })));
 });
 
