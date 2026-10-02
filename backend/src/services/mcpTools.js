@@ -16,6 +16,7 @@ const TASK_STATUSES = ['TODO', 'IN_PROGRESS', 'DONE'];
 const TASK_PRIORITIES = ['HIGH', 'MEDIUM', 'LOW'];
 const PROJECT_TYPES = ['FIXED_FEE', 'TIME_MATERIALS', 'NON_BILLABLE'];
 const PROJECT_STATUSES = ['OPEN', 'CLOSED', 'IN_PROGRESS', 'SUBMITTED', 'PENDING_AWARD', 'BID_AWARDED', 'BID_NOT_AWARDED'];
+const CALL_LOG_SOURCES = ['GRANOLA', 'MANUAL'];
 
 /**
  * Thrown by handlers for anything the caller can fix by retrying with different
@@ -67,6 +68,16 @@ function parseEntryDate(value) {
 
 function day(date) {
   return date ? date.toISOString().slice(0, 10) : null;
+}
+
+// Call log dates are stored the way routes/projects.js stores them, new Date()
+// on a bare YYYY-MM-DD, which lands on UTC midnight. Only the calendar day
+// form is accepted so the duplicate check below compares like with like.
+function parseCallLogDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new ToolError('date must be YYYY-MM-DD');
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) throw new ToolError(`Could not read "${value}" as a date`);
+  return d;
 }
 
 // ---------- response shaping ----------
@@ -149,6 +160,18 @@ function shapeTimeEntry(e) {
   };
 }
 
+function shapeCallLog(c) {
+  return {
+    id: c.id,
+    projectId: c.projectId,
+    title: c.title,
+    date: day(c.date),
+    source: c.source,
+    summary: c.summary,
+    createdAt: c.createdAt.toISOString(),
+  };
+}
+
 const TASK_INCLUDE = {
   project: { select: { id: true, name: true, client: { select: { id: true, name: true } } } },
   assigneeUser: { select: { id: true, name: true } },
@@ -196,6 +219,32 @@ async function loggedHoursByProject(projectIds) {
   return totals;
 }
 
+/**
+ * Latest dated activity per project: the most recent confirmed time entry or
+ * call log, whichever is later. Missing when a project has neither.
+ */
+async function lastActivityByProject(projectIds) {
+  if (projectIds.length === 0) return {};
+  const [entries, calls] = await Promise.all([
+    prisma.timeEntry.groupBy({
+      by: ['projectId'],
+      where: { projectId: { in: projectIds }, status: 'CONFIRMED' },
+      _max: { date: true },
+    }),
+    prisma.callLog.groupBy({
+      by: ['projectId'],
+      where: { projectId: { in: projectIds } },
+      _max: { date: true },
+    }),
+  ]);
+  const latest = {};
+  for (const row of [...entries, ...calls]) {
+    const d = row._max.date;
+    if (d && (!latest[row.projectId] || d > latest[row.projectId])) latest[row.projectId] = d;
+  }
+  return latest;
+}
+
 /** Resolves the acting user for a write, by id or by email. */
 async function resolveUserId({ userId, userEmail }) {
   if (userId) {
@@ -222,20 +271,44 @@ const tools = [
     title: 'List clients',
     description:
       'List Civic North clients. Active clients only unless includeArchived is true. ' +
-      'Internal (non-billable) clients are flagged with isInternal.',
+      'Internal (non-billable) clients are flagged with isInternal. Pass includeProjects ' +
+      'to get each client\'s active projects (id, name, status, lastActivityDate) in the same call.',
     inputSchema: {
       type: 'object',
       properties: {
         includeArchived: { type: 'boolean', description: 'Include archived clients. Default false.' },
+        includeProjects: {
+          type: 'boolean',
+          description:
+            'Also return each client\'s active projects. lastActivityDate is the latest confirmed ' +
+            'time entry or call log (YYYY-MM-DD), or null. Default false.',
+        },
       },
       additionalProperties: false,
     },
     async handler(args) {
+      const withProjects = args.includeProjects === true;
       const clients = await prisma.client.findMany({
         where: args.includeArchived === true ? {} : { isActive: true },
         orderBy: [{ isInternal: 'asc' }, { name: 'asc' }],
+        // Same project filter as GET /api/clients?include=projects.
+        include: withProjects
+          ? {
+              projects: {
+                where: { isActive: true },
+                orderBy: { name: 'asc' },
+                select: { id: true, name: true, status: true },
+              },
+            }
+          : undefined,
       });
-      return clients.map(shapeClient);
+      if (!withProjects) return clients.map(shapeClient);
+
+      const latest = await lastActivityByProject(clients.flatMap((c) => c.projects.map((p) => p.id)));
+      return clients.map((c) => ({
+        ...shapeClient(c),
+        projects: c.projects.map((p) => ({ ...p, lastActivityDate: day(latest[p.id]) })),
+      }));
     },
   },
 
@@ -662,6 +735,112 @@ const tools = [
         },
       });
       return shapeClient(client);
+    },
+  },
+  {
+    name: 'get_project_overview',
+    title: 'Get a project overview',
+    description:
+      'One project\'s contacts (client emails), notes, and call logs. ' +
+      'Used to match meetings to projects and dedupe call logs.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string', description: 'Project id. See list_projects.' },
+      },
+      required: ['projectId'],
+      additionalProperties: false,
+    },
+    async handler(args) {
+      const projectId = required(args, 'projectId');
+      // The contact and call log parts of GET /api/projects/:id/overview. The
+      // burn, deliverable and milestone rollups stay in the web app.
+      const project = await prisma.project.findUnique({
+        where: { id: projectId },
+        include: {
+          client: { include: { contacts: { orderBy: [{ isPrimary: 'desc' }, { name: 'asc' }] } } },
+          retainerConfig: true,
+          callLogs: { orderBy: { date: 'desc' } },
+        },
+      });
+      if (!project) throw new ToolError(`No project with id ${projectId} — call list_projects first`);
+
+      // Named contacts first, then any address on the client record that no
+      // contact already carries, so contacts[].email is the full list to match on.
+      const contacts = project.client.contacts.map((c) => ({
+        name: c.name,
+        email: c.email,
+        role: c.role,
+        isPrimary: c.isPrimary,
+      }));
+      const known = new Set(contacts.map((c) => c.email?.toLowerCase()).filter(Boolean));
+      for (const email of project.client.emails) {
+        if (known.has(email.toLowerCase())) continue;
+        known.add(email.toLowerCase());
+        contacts.push({ name: null, email, role: null, isPrimary: false });
+      }
+
+      return {
+        ...shapeProject(project),
+        client: {
+          id: project.client.id,
+          name: project.client.name,
+          emails: project.client.emails,
+          keywords: project.client.keywords,
+          isInternal: project.client.isInternal,
+        },
+        contacts,
+        scopeOfWork: project.scopeOfWork,
+        callLogs: project.callLogs.map(shapeCallLog),
+      };
+    },
+  },
+
+  {
+    name: 'create_call_log',
+    title: 'File a call log',
+    description:
+      'File a meeting call log on a project. If the project already has a call log with the ' +
+      'same title on the same date, that one is returned with alreadyExisted: true instead of ' +
+      'filing a duplicate.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string', description: 'Project the call belongs to. See list_projects.' },
+        title: { type: 'string', description: 'Meeting title.' },
+        date: { type: 'string', description: 'YYYY-MM-DD' },
+        source: { type: 'string', enum: CALL_LOG_SOURCES, description: 'Default GRANOLA.' },
+        summary: { type: 'string', description: 'Multiline summary (attendees, link, summary, action items).' },
+      },
+      required: ['projectId', 'title', 'date', 'summary'],
+      additionalProperties: false,
+    },
+    async handler(args) {
+      const projectId = required(args, 'projectId');
+      const title = required(args, 'title').trim();
+      const date = parseCallLogDate(required(args, 'date'));
+      const summary = required(args, 'summary');
+      const source = oneOf(args.source, CALL_LOG_SOURCES, 'source') || 'GRANOLA';
+
+      const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
+      if (!project) throw new ToolError(`No project with id ${projectId} — call list_projects first`);
+
+      // A retried run must not double-file. Match on the calendar day rather
+      // than the exact instant, since a log edited in the web app may not sit
+      // on UTC midnight.
+      const nextDay = new Date(date.getTime() + 24 * 60 * 60 * 1000);
+      const existing = await prisma.callLog.findFirst({
+        where: {
+          projectId,
+          title: { equals: title, mode: 'insensitive' },
+          date: { gte: date, lt: nextDay },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (existing) return { ...shapeCallLog(existing), alreadyExisted: true };
+
+      const log = await prisma.callLog.create({ data: { projectId, title, date, summary, source } });
+      return { ...shapeCallLog(log), alreadyExisted: false };
     },
   },
 ];

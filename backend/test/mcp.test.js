@@ -165,6 +165,72 @@ test('tools/call on a read tool returns real data', async (t) => {
       assert.equal(typeof e.userName, 'string');
     }
   });
+
+  await t.test('list_clients with includeProjects nests each client\'s active projects', async () => {
+    const clients = toolPayload(
+      await (await call('tools/call', { name: 'list_clients', arguments: { includeProjects: true } })).json()
+    );
+    for (const c of clients) {
+      assert.ok(Array.isArray(c.emails));
+      assert.equal(typeof c.isInternal, 'boolean');
+      assert.ok(Array.isArray(c.projects));
+      for (const p of c.projects) {
+        assert.deepEqual(Object.keys(p).sort(), ['id', 'lastActivityDate', 'name', 'status']);
+        if (p.lastActivityDate !== null) assert.match(p.lastActivityDate, /^\d{4}-\d{2}-\d{2}$/);
+      }
+    }
+    const plain = toolPayload(await (await call('tools/call', { name: 'list_clients', arguments: {} })).json());
+    assert.equal(plain[0]?.projects, undefined, 'projects only come back when asked for');
+  });
+});
+
+test('call log tools read, file, and dedupe against a real project', async (t) => {
+  const project = await prisma.project.findFirst({ where: { isActive: true }, include: { client: true } });
+  assert.ok(project, 'expected the dev database to hold at least one active project');
+  const title = `MCP test call ${Date.now()}`;
+
+  t.after(() => prisma.callLog.deleteMany({ where: { projectId: project.id, title } }));
+
+  await t.test('get_project_overview returns contacts, notes and call logs', async () => {
+    const overview = toolPayload(
+      await (await call('tools/call', { name: 'get_project_overview', arguments: { projectId: project.id } })).json()
+    );
+    assert.equal(overview.id, project.id);
+    assert.ok(Array.isArray(overview.contacts));
+    assert.ok(Array.isArray(overview.callLogs));
+    assert.ok('notes' in overview);
+    const emails = overview.contacts.map((c) => c.email?.toLowerCase());
+    for (const e of project.client.emails) assert.ok(emails.includes(e.toLowerCase()), `${e} missing from contacts`);
+  });
+
+  await t.test('create_call_log files once, then returns the same log on a retry', async () => {
+    const args = { projectId: project.id, title, date: '2026-10-01', summary: 'Attendees: test\nSummary: test' };
+    const first = toolPayload(await (await call('tools/call', { name: 'create_call_log', arguments: args })).json());
+    assert.equal(first.alreadyExisted, false);
+    assert.equal(first.source, 'GRANOLA');
+    assert.equal(first.date, '2026-10-01');
+
+    const retry = toolPayload(await (await call('tools/call', { name: 'create_call_log', arguments: args })).json());
+    assert.equal(retry.alreadyExisted, true);
+    assert.equal(retry.id, first.id);
+    assert.equal(await prisma.callLog.count({ where: { projectId: project.id, title } }), 1);
+
+    const overview = toolPayload(
+      await (await call('tools/call', { name: 'get_project_overview', arguments: { projectId: project.id } })).json()
+    );
+    assert.ok(overview.callLogs.some((c) => c.id === first.id));
+  });
+
+  await t.test('create_call_log rejects a date that is not YYYY-MM-DD', async () => {
+    const body = await (
+      await call('tools/call', {
+        name: 'create_call_log',
+        arguments: { projectId: project.id, title, date: 'Oct 1', summary: 'x' },
+      })
+    ).json();
+    assert.equal(body.result.isError, true);
+    assert.match(body.result.content[0].text, /YYYY-MM-DD/);
+  });
 });
 
 test('a failing tool comes back as a result with isError, not a JSON-RPC error', async (t) => {
